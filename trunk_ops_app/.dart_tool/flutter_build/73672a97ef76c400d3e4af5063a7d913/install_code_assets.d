@@ -1,0 +1,1 @@
+ D:\\TrunkOps\\trunk_ops_app\\.dart_tool\\flutter_build\\73672a97ef76c400d3e4af5063a7d913\\native_assets.json: 
