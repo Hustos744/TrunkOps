@@ -15,4 +15,5 @@ __all__ = [
     "notifications",
     "audit",
     "settings",
+    "coverage_calc",
 ]

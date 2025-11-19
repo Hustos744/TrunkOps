@@ -13,15 +13,26 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import database
-from .routers import auth, units, devices, nodes, assets, maintenance, notifications, audit, settings
+from .routers import (
+    auth,
+    units,
+    devices,
+    nodes,
+    assets,
+    maintenance,
+    notifications,
+    audit,
+    settings,
+    coverage_calc,
+)
 
-# Initialize FastAPI app
-app = FastAPI(title="TrunkOps Backend", version="0.1.0")
 
-# Add CORS middleware to allow frontend applications to access API
+app = FastAPI(title="TrunkOps Backend")
+
+# CORS configuration can be adjusted for production
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, restrict to allowed origins
+    allow_origins=["*"],  # In production, restrict to known frontends
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -44,3 +55,4 @@ app.include_router(maintenance.router)
 app.include_router(notifications.router)
 app.include_router(audit.router)
 app.include_router(settings.router)
+app.include_router(coverage_calc.router)

@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:trunk_ops_app/theme/app_colors.dart'; // AppExtraColors
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:trunk_ops_app/models/coverage_models.dart';
+import 'package:trunk_ops_app/services/coverage_api_service.dart';
+import 'package:trunk_ops_app/theme/app_colors.dart';
 
 class CoveragePage extends StatelessWidget {
   const CoveragePage({super.key});
@@ -20,7 +24,7 @@ class CoveragePage extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Заголовок + підзаголовок
+              // Заголовок
               Text(
                 'Мапа покриття',
                 style: textTheme.headlineLarge?.copyWith(
@@ -31,7 +35,7 @@ class CoveragePage extends StatelessWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                'Візуалізація зони дії транкінгової мережі та стан основних вузлів',
+                'Візуалізація зони дії транкінгової мережі та взаємодії між вузлами',
                 style: textTheme.bodyMedium?.copyWith(
                   fontSize: 14,
                   color:
@@ -39,10 +43,9 @@ class CoveragePage extends StatelessWidget {
                       colorScheme.onBackground.withOpacity(0.7),
                 ),
               ),
-
               const SizedBox(height: 20),
 
-              // Верхня панель фільтрів
+              // Верхня панель фільтрів (формальна, поки без логіки)
               Wrap(
                 spacing: 12,
                 runSpacing: 8,
@@ -51,34 +54,27 @@ class CoveragePage extends StatelessWidget {
                   _FilterPill(
                     label: 'ОТУ',
                     value: 'ОТУ «Північ»',
-                    onTap: () {
-                      // TODO: вибір ОТУ / ТВД
-                    },
+                    onTap: () {},
                   ),
                   _FilterPill(
                     label: 'Масштаб',
                     value: 'Оперативно-тактичний',
-                    onTap: () {
-                      // TODO: вибір масштабу
-                    },
+                    onTap: () {},
                   ),
                   _FilterPill(
                     label: 'Шар',
                     value: 'Покриття + вузли',
-                    onTap: () {
-                      // TODO: вибір шарів на мапі
-                    },
+                    onTap: () {},
                   ),
                   const SizedBox(width: 12),
                   TextButton(
                     onPressed: () {
-                      // TODO: скинути фільтри
+                      // TODO: скидання фільтрів
                     },
                     child: Text(
                       'Скинути фільтри',
                       style: textTheme.bodySmall?.copyWith(
                         fontSize: 13,
-                        // акцентний / попереджувальний колір
                         color:
                             theme.extension<AppExtraColors>()?.warning ??
                             colorScheme.secondary,
@@ -87,17 +83,16 @@ class CoveragePage extends StatelessWidget {
                   ),
                 ],
               ),
-
               const SizedBox(height: 24),
 
-              // Основний контент: мапа + бокова панель
+              // Основний контент
               if (isWide)
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(flex: 3, child: const _CoverageMapCard()),
-                    const SizedBox(width: 20),
-                    const Expanded(flex: 2, child: _SideStatusPanel()),
+                  children: const [
+                    Expanded(flex: 3, child: _CoverageMapCard()),
+                    SizedBox(width: 20),
+                    Expanded(flex: 2, child: _SideStatusPanel()),
                   ],
                 )
               else
@@ -119,10 +114,151 @@ class CoveragePage extends StatelessWidget {
   }
 }
 
-/// ───────────────── МАПА (плейсхолдер під реальну карту) ─────────────────
+/// ───────────────────── МОДЕЛЬ ВНУТРІШНЬОЇ СТАНЦІЇ ─────────────────────
 
-class _CoverageMapCard extends StatelessWidget {
+class _Station {
+  final String name;
+  final Color color;
+  double? lat;
+  double? lon;
+
+  _Station({required this.name, required this.color, this.lat, this.lon});
+}
+
+/// ───────────────────── КАРТКА З МАПОЮ ПОКРИТТЯ ─────────────────────
+
+class _CoverageMapCard extends StatefulWidget {
   const _CoverageMapCard();
+
+  @override
+  State<_CoverageMapCard> createState() => _CoverageMapCardState();
+}
+
+class _CoverageMapCardState extends State<_CoverageMapCard> {
+  // Бек завжди локальний, запуск на емуляторі → 10.0.2.2
+  final CoverageApiService _api = CoverageApiService();
+  final Distance _distance = const Distance();
+
+  // Параметри станції (активної)
+  final TextEditingController _centerLatController = TextEditingController(
+    text: '50.4501',
+  );
+  final TextEditingController _centerLonController = TextEditingController(
+    text: '30.5234',
+  );
+  final TextEditingController _radiusKmController = TextEditingController(
+    text: '5',
+  );
+  final TextEditingController _stepMController = TextEditingController(
+    text: '200',
+  );
+  final TextEditingController _frequencyController = TextEditingController(
+    text: '410',
+  );
+  final TextEditingController _bsHeightController = TextEditingController(
+    text: '30',
+  );
+  final TextEditingController _txPowerController = TextEditingController(
+    text: '43',
+  );
+  final TextEditingController _rxHeightController = TextEditingController(
+    text: '1.5',
+  );
+
+  bool _isLoading = false;
+  CoverageResponse? _coverage;
+
+  // Дві станції для взаємодії
+  final List<_Station> _stations = [
+    _Station(name: 'Станція 1', color: Colors.blueAccent),
+    _Station(name: 'Станція 2', color: Colors.orangeAccent),
+  ];
+  int _selectedStationIndex = 0;
+
+  _Station get _selectedStation => _stations[_selectedStationIndex];
+
+  @override
+  void dispose() {
+    _centerLatController.dispose();
+    _centerLonController.dispose();
+    _radiusKmController.dispose();
+    _stepMController.dispose();
+    _frequencyController.dispose();
+    _bsHeightController.dispose();
+    _txPowerController.dispose();
+    _rxHeightController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _calculateCoverage(BuildContext context) async {
+    setState(() => _isLoading = true);
+
+    try {
+      final centerLat = double.parse(_centerLatController.text.trim());
+      final centerLon = double.parse(_centerLonController.text.trim());
+      final radiusKm = double.parse(_radiusKmController.text.trim());
+      final stepM = double.parse(_stepMController.text.trim());
+      final freqMhz = double.parse(_frequencyController.text.trim());
+      final bsHeightM = double.parse(_bsHeightController.text.trim());
+      final txPowerDbm = double.parse(_txPowerController.text.trim());
+      final rxHeightM = double.parse(_rxHeightController.text.trim());
+
+      // Підтягнути координати в активну станцію
+      _selectedStation.lat = centerLat;
+      _selectedStation.lon = centerLon;
+
+      final site = Site(
+        id: _selectedStation.name,
+        lat: centerLat,
+        lon: centerLon,
+        txPowerDbm: txPowerDbm,
+        antennaGainDbi: 9,
+        antennaHeightM: bsHeightM,
+        frequencyMhz: freqMhz,
+      );
+
+      final grid = GridConfig(
+        centerLat: centerLat,
+        centerLon: centerLon,
+        radiusKm: radiusKm,
+        stepM: stepM,
+      );
+
+      final req = CoverageRequest(
+        sites: [site],
+        rxHeightM: rxHeightM,
+        grid: grid,
+      );
+
+      final resp = await _api.calculateCoverage(req);
+
+      if (!mounted) return;
+      setState(() {
+        _coverage = resp;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Помилка розрахунку: $e')));
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Color _colorForRx(double rxDbm, ThemeData theme) {
+    if (rxDbm >= -80) {
+      return Colors.green.withOpacity(0.8);
+    } else if (rxDbm >= -95) {
+      return Colors.yellow.withOpacity(0.8);
+    } else if (rxDbm >= -110) {
+      return Colors.orange.withOpacity(0.8);
+    } else {
+      return Colors.red.withOpacity(0.3);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -134,120 +270,284 @@ class _CoverageMapCard extends StatelessWidget {
         theme.textTheme.bodySmall?.color ??
         colorScheme.onSurface.withOpacity(0.7);
 
-    // статусні кольори
-    final stableColor = extra?.success ?? colorScheme.primary;
-    final degradedColor = extra?.warning ?? colorScheme.secondary;
-    final criticalColor = colorScheme.error;
+    final centerLat =
+        double.tryParse(_centerLatController.text.trim()) ?? 50.4501;
+    final centerLon =
+        double.tryParse(_centerLonController.text.trim()) ?? 30.5234;
 
-    return AspectRatio(
-      aspectRatio: 16 / 9,
-      child: Container(
-        decoration: BoxDecoration(
-          color: colorScheme.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: extra?.borderDefault ?? colorScheme.outline.withOpacity(0.6),
-            width: 1,
+    final radiusKm = double.tryParse(_radiusKmController.text.trim()) ?? 5.0;
+
+    // Маркери станцій
+    final markers = <Marker>[];
+    for (final station in _stations) {
+      if (station.lat != null && station.lon != null) {
+        markers.add(
+          Marker(
+            point: LatLng(station.lat!, station.lon!),
+            width: 30,
+            height: 30,
+            child: Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: station.color,
+                boxShadow: [
+                  BoxShadow(
+                    color: station.color.withOpacity(0.5),
+                    blurRadius: 12,
+                    spreadRadius: 2,
+                  ),
+                ],
+              ),
+              child: const Center(
+                child: Icon(
+                  Icons.radio_button_checked,
+                  size: 18,
+                  color: Colors.white,
+                ),
+              ),
+            ),
           ),
+        );
+      }
+    }
+
+    // Лінії між станціями (чи "працюють" одна з одною)
+    final polylines = <Polyline>[];
+    if (_stations.length >= 2) {
+      for (var i = 0; i < _stations.length; i++) {
+        for (var j = i + 1; j < _stations.length; j++) {
+          final a = _stations[i];
+          final b = _stations[j];
+          if (a.lat == null || b.lat == null) continue;
+
+          final distKm = _distance.as(
+            LengthUnit.Kilometer,
+            LatLng(a.lat!, a.lon!),
+            LatLng(b.lat!, b.lon!),
+          );
+
+          final within = distKm <= radiusKm;
+          polylines.add(
+            Polyline(
+              points: [LatLng(a.lat!, a.lon!), LatLng(b.lat!, b.lon!)],
+              strokeWidth: 3,
+              color: within ? Colors.greenAccent : Colors.redAccent,
+            ),
+          );
+        }
+      }
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: extra?.borderDefault ?? colorScheme.outline.withOpacity(0.6),
+          width: 1,
         ),
-        padding: const EdgeInsets.all(16),
-        child: Stack(
-          children: [
-            // Тло зі "стилізацією" під карту
-            Positioned.fill(
-              child: CustomPaint(
-                painter: _GridBackgroundPainter(
-                  lineColor:
-                      (extra?.borderDefault ??
-                              colorScheme.outlineVariant ??
-                              colorScheme.outline)
-                          .withOpacity(0.7),
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // Верхній опис
+          Text(
+            'Оперативна обстановка',
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontSize: 14,
+              color: mutedText,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Інтерактивна мапа покриття та взаємодії між станціями',
+            style: theme.textTheme.bodyMedium?.copyWith(
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+              color: colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Вибір активної станції
+          Row(
+            children: [
+              Text(
+                'Активна станція:',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  fontSize: 13,
+                  color: mutedText,
                 ),
               ),
-            ),
+              const SizedBox(width: 8),
+              DropdownButton<int>(
+                value: _selectedStationIndex,
+                items: List.generate(_stations.length, (index) {
+                  final st = _stations[index];
+                  return DropdownMenuItem(
+                    value: index,
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: st.color,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(st.name),
+                      ],
+                    ),
+                  );
+                }),
+                onChanged: (value) {
+                  if (value == null) return;
+                  setState(() {
+                    _selectedStationIndex = value;
 
-            // Верхній опис
-            Align(
-              alignment: Alignment.topLeft,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                    // Якщо у станції вже є координати — підтягнути їх в поля
+                    final st = _selectedStation;
+                    if (st.lat != null && st.lon != null) {
+                      _centerLatController.text = st.lat!.toStringAsFixed(6);
+                      _centerLonController.text = st.lon!.toStringAsFixed(6);
+                    }
+                  });
+                },
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          // Панель параметрів
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _SmallNumberField(label: 'Lat', controller: _centerLatController),
+              _SmallNumberField(label: 'Lon', controller: _centerLonController),
+              _SmallNumberField(
+                label: 'Радіус, км',
+                controller: _radiusKmController,
+              ),
+              _SmallNumberField(label: 'Крок, м', controller: _stepMController),
+              _SmallNumberField(
+                label: 'Частота, МГц',
+                controller: _frequencyController,
+              ),
+              _SmallNumberField(
+                label: 'H БС, м',
+                controller: _bsHeightController,
+              ),
+              _SmallNumberField(
+                label: 'Tx, dBm',
+                controller: _txPowerController,
+              ),
+              _SmallNumberField(
+                label: 'H Rx, м',
+                controller: _rxHeightController,
+              ),
+              ElevatedButton.icon(
+                onPressed: _isLoading
+                    ? null
+                    : () => _calculateCoverage(context),
+                icon: _isLoading
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.analytics_outlined, size: 18),
+                label: const Text('Розрахувати'),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Легенда
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: colorScheme.background.withOpacity(0.9),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color:
+                    extra?.borderDefault ??
+                    colorScheme.outline.withOpacity(0.6),
+                width: 1,
+              ),
+            ),
+            child: const Wrap(
+              spacing: 12,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                _LegendDot(
+                  color: Colors.green,
+                  label: 'Стабільна зона (rx ≥ -80 dBm)',
+                ),
+                _LegendDot(color: Colors.yellow, label: 'Погіршене покриття'),
+                _LegendDot(color: Colors.orange, label: 'Граничне покриття'),
+                _LegendDot(color: Colors.red, label: 'Нижче порога'),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // Мапа в фіксованій висоті (щоб не було Expanded в ScrollView)
+          SizedBox(
+            height: 380,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: FlutterMap(
+                options: MapOptions(
+                  initialCenter: LatLng(centerLat, centerLon),
+                  initialZoom: 11,
+                  onTap: (tapPos, latLng) {
+                    setState(() {
+                      // Переносимо активну станцію в точку тапу
+                      _centerLatController.text = latLng.latitude
+                          .toStringAsFixed(6);
+                      _centerLonController.text = latLng.longitude
+                          .toStringAsFixed(6);
+                      _selectedStation.lat = latLng.latitude;
+                      _selectedStation.lon = latLng.longitude;
+                    });
+                  },
+                ),
                 children: [
-                  Text(
-                    'Оперативна обстановка',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      fontSize: 14,
-                      color: mutedText,
-                    ),
+                  TileLayer(
+                    urlTemplate:
+                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                   ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Тут буде інтерактивна мапа покриття',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                      color: colorScheme.onSurface,
+                  if (_coverage != null)
+                    CircleLayer(
+                      circles: _coverage!.cells.map((cell) {
+                        final color = _colorForRx(cell.rxLevelDbm, theme);
+                        return CircleMarker(
+                          point: LatLng(cell.lat, cell.lon),
+                          radius: 8,
+                          color: color,
+                        );
+                      }).toList(),
                     ),
-                  ),
+                  if (polylines.isNotEmpty) PolylineLayer(polylines: polylines),
+                  if (markers.isNotEmpty) MarkerLayer(markers: markers),
                 ],
               ),
             ),
-
-            // Легенда знизу зліва
-            Align(
-              alignment: Alignment.bottomLeft,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: colorScheme.background.withOpacity(0.9),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color:
-                        extra?.borderDefault ??
-                        colorScheme.outline.withOpacity(0.6),
-                    width: 1,
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _LegendDot(color: stableColor, label: 'Стабільна зона'),
-                    const SizedBox(width: 12),
-                    _LegendDot(
-                      color: degradedColor,
-                      label: 'Погіршене покриття',
-                    ),
-                    const SizedBox(width: 12),
-                    _LegendDot(color: criticalColor, label: 'Критичні ділянки'),
-                  ],
-                ),
-              ),
-            ),
-
-            // Плейсхолдерні "вузли" / "базові станції"
-            Align(
-              alignment: Alignment.center,
-              child: Wrap(
-                spacing: 32,
-                runSpacing: 24,
-                alignment: WrapAlignment.center,
-                children: [
-                  _NodePoint(label: 'Вузол А', statusColor: stableColor),
-                  _NodePoint(label: 'Вузол B', statusColor: degradedColor),
-                  _NodePoint(label: 'Вузол C', statusColor: criticalColor),
-                ],
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
 
-/// ───────────────── ПРАВА ПАНЕЛЬ СТАНУ ─────────────────
+/// ───────────────────── БОКОВА ПАНЕЛЬ СТАНУ ─────────────────────
 
 class _SideStatusPanel extends StatelessWidget {
   const _SideStatusPanel();
@@ -288,8 +588,6 @@ class _SideStatusPanel extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-
-          // Прогрес-бари по якості звʼязку
           _CoverageStatusRow(
             label: 'Стабільна зона',
             percent: 0.72,
@@ -307,9 +605,7 @@ class _SideStatusPanel extends StatelessWidget {
             percent: 0.10,
             color: criticalColor,
           ),
-
           const SizedBox(height: 20),
-
           Text(
             'Ключові вузли',
             style: textTheme.bodyMedium?.copyWith(
@@ -319,7 +615,6 @@ class _SideStatusPanel extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-
           _NodeStatusTile(
             name: 'Вузол А — Штаб ОТУ',
             status: 'OK',
@@ -331,7 +626,7 @@ class _SideStatusPanel extends StatelessWidget {
             name: 'Вузол B — Опорний пункт',
             status: 'Warning',
             description:
-                'Періодичні втрати пакеті в години пікового навантаження.',
+                'Періодичні втрати пакетів в години пікового навантаження.',
             color: degradedColor,
           ),
           const SizedBox(height: 8),
@@ -347,7 +642,7 @@ class _SideStatusPanel extends StatelessWidget {
   }
 }
 
-/// ───────────────── Дрібні допоміжні віджети ─────────────────
+/// ───────────────────── ДОПОМІЖНІ ВІДЖЕТИ ─────────────────────
 
 class _FilterPill extends StatelessWidget {
   final String label;
@@ -445,48 +740,6 @@ class _LegendDot extends StatelessWidget {
   }
 }
 
-class _NodePoint extends StatelessWidget {
-  final String label;
-  final Color statusColor;
-
-  const _NodePoint({required this.label, required this.statusColor});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final textTheme = theme.textTheme;
-    final colorScheme = theme.colorScheme;
-
-    final labelColor =
-        textTheme.bodySmall?.color ?? colorScheme.onSurface.withOpacity(0.8);
-
-    return Column(
-      children: [
-        Container(
-          width: 18,
-          height: 18,
-          decoration: BoxDecoration(
-            color: statusColor,
-            borderRadius: BorderRadius.circular(999),
-            boxShadow: [
-              BoxShadow(
-                color: statusColor.withOpacity(0.4),
-                blurRadius: 12,
-                spreadRadius: 2,
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: textTheme.bodySmall?.copyWith(fontSize: 11, color: labelColor),
-        ),
-      ],
-    );
-  }
-}
-
 class _CoverageStatusRow extends StatelessWidget {
   final String label;
   final double percent; // 0..1
@@ -536,9 +789,7 @@ class _CoverageStatusRow extends StatelessWidget {
           child: LinearProgressIndicator(
             value: percent,
             minHeight: 6,
-            backgroundColor:
-                colorScheme.surfaceVariant ??
-                colorScheme.surface.withOpacity(0.5),
+            backgroundColor: colorScheme.surfaceVariant.withOpacity(0.5),
             color: color,
           ),
         ),
@@ -642,29 +893,34 @@ class _NodeStatusTile extends StatelessWidget {
   }
 }
 
-/// Фон з сіткою для мапи (щоб не був просто голий прямокутник)
-class _GridBackgroundPainter extends CustomPainter {
-  final Color lineColor;
+class _SmallNumberField extends StatelessWidget {
+  final String label;
+  final TextEditingController controller;
 
-  const _GridBackgroundPainter({required this.lineColor});
+  const _SmallNumberField({
+    super.key,
+    required this.label,
+    required this.controller,
+  });
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final paintLine = Paint()
-      ..color = lineColor
-      ..strokeWidth = 1;
-
-    const step = 32.0;
-
-    for (double x = 0; x <= size.width; x += step) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paintLine);
-    }
-
-    for (double y = 0; y <= size.height; y += step) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), paintLine);
-    }
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SizedBox(
+      width: 120,
+      child: TextField(
+        controller: controller,
+        keyboardType: const TextInputType.numberWithOptions(
+          decimal: true,
+          signed: true,
+        ),
+        style: theme.textTheme.bodySmall?.copyWith(fontSize: 12),
+        decoration: const InputDecoration(
+          isDense: true,
+          border: OutlineInputBorder(),
+          contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        ).copyWith(labelText: label),
+      ),
+    );
   }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
