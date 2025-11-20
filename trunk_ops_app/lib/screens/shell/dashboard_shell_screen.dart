@@ -34,87 +34,84 @@ class _DashboardShellScreenState extends State<DashboardShellScreen> {
       // темний "outer" фон навколо всієї панелі
       backgroundColor: colorScheme.background,
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(12),
-          child: Container(
-            // світліша робоча панель
-            decoration: BoxDecoration(
-              color: extra.surfaceSubtle,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(
-                color: extra.borderDefault.withOpacity(0.9),
-                width: 1.1,
+        child: Container(
+          // світліша робоча панель
+          decoration: BoxDecoration(
+            color: extra.surfaceSubtle,
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(
+              color: extra.borderDefault.withOpacity(0.9),
+              width: 1.1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.35),
+                blurRadius: 20,
+                offset: const Offset(0, 12),
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.35),
-                  blurRadius: 20,
-                  offset: const Offset(0, 12),
-                ),
-              ],
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Row(
-              children: [
-                // Бокове меню
-                SideMenu(
-                  selectedIndex: _selectedIndex,
-                  isExpanded: _isMenuExpanded,
-                  onItemSelected: (index) {
-                    // 8 — "Вихід"
-                    if (index == 8) {
-                      // TODO: тут зробиш logout + перехід на LoginScreen
-                      return;
-                    }
-                    setState(() {
-                      _selectedIndex = index;
-                    });
-                  },
-                  onExpandedChanged: (expanded) {
-                    setState(() {
-                      _isMenuExpanded = expanded;
-                    });
-                  },
-                ),
+            ],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Row(
+            children: [
+              // Бокове меню
+              SideMenu(
+                selectedIndex: _selectedIndex,
+                isExpanded: _isMenuExpanded,
+                onItemSelected: (index) {
+                  // 8 — "Вихід"
+                  if (index == 8) {
+                    // TODO: тут зробиш logout + перехід на LoginScreen
+                    return;
+                  }
+                  setState(() {
+                    _selectedIndex = index;
+                  });
+                },
+                onExpandedChanged: (expanded) {
+                  setState(() {
+                    _isMenuExpanded = expanded;
+                  });
+                },
+              ),
 
-                // Права частина — контент + затемнення (тільки над ним)
-                Expanded(
-                  child: Stack(
-                    children: [
-                      // Контент сторінок
-                      IndexedStack(
-                        index: _selectedIndex,
-                        children: const [
-                          DashboardPage(),
-                          CoveragePage(),
-                          UnitsPage(),
-                          AssetsPage(),
-                          MaintenancePage(),
-                          AuditLogPage(),
-                          SettingsPage(),
-                          NotificationsPage(),
-                          // index 8 — logout, контент не потрібен
-                        ],
-                      ),
+              // Права частина — контент + затемнення (тільки над ним)
+              Expanded(
+                child: Stack(
+                  children: [
+                    // Контент сторінок
+                    IndexedStack(
+                      index: _selectedIndex,
+                      children: const [
+                        DashboardPage(),
+                        CoveragePage(),
+                        UnitsPage(),
+                        AssetsPage(),
+                        MaintenancePage(),
+                        AuditLogPage(),
+                        SettingsPage(),
+                        NotificationsPage(),
+                        // index 8 — logout, контент не потрібен
+                      ],
+                    ),
 
-                      // Затемнення ТІЛЬКИ над контентом, а НЕ над меню
-                      if (_isMenuExpanded)
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () {
-                            setState(() {
-                              _isMenuExpanded = false;
-                            });
-                          },
-                          child: Container(
-                            color: colorScheme.scrim.withOpacity(0.35),
-                          ),
+                    // Затемнення ТІЛЬКИ над контентом, а НЕ над меню
+                    if (_isMenuExpanded)
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () {
+                          setState(() {
+                            _isMenuExpanded = false;
+                          });
+                        },
+                        child: Container(
+                          color: colorScheme.scrim.withOpacity(0.35),
                         ),
-                    ],
-                  ),
+                      ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
