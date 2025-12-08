@@ -155,10 +155,8 @@ ThemeData buildDarkTheme() {
   final colorScheme = base.copyWith(
     primary: _darkPrimary500,
     primaryContainer: _darkPrimary700,
-    secondary: _darkPrimary300,
-    background: _darkBackground900, // зовнішній фон (за межами shell)
-    surface: _darkSurface700, // основна "робоча" поверхня
-    onBackground: _darkTextPrimary,
+    secondary: _darkPrimary300, // зовнішній фон (за межами shell)
+    surface: _darkSurface700,
     onSurface: _darkTextPrimary,
     error: _darkError,
   );
@@ -166,7 +164,7 @@ ThemeData buildDarkTheme() {
   return ThemeData(
     useMaterial3: true,
     colorScheme: colorScheme,
-    scaffoldBackgroundColor: colorScheme.background,
+    scaffoldBackgroundColor: colorScheme.surface,
     fontFamily: 'Inter',
     textTheme: buildAppTextTheme(_darkTextPrimary, _darkTextSecondary),
     extensions: const [
@@ -197,9 +195,7 @@ ThemeData buildLightTheme() {
     primary: _lightPrimary500,
     primaryContainer: _lightPrimary700,
     secondary: _lightPrimary300,
-    background: _lightBackground50,
     surface: _lightSurface100,
-    onBackground: _lightTextPrimary,
     onSurface: _lightTextPrimary,
     error: _lightError,
   );
@@ -207,7 +203,7 @@ ThemeData buildLightTheme() {
   return ThemeData(
     useMaterial3: true,
     colorScheme: colorScheme,
-    scaffoldBackgroundColor: colorScheme.background,
+    scaffoldBackgroundColor: colorScheme.surface,
     fontFamily: 'Inter',
     textTheme: buildAppTextTheme(_lightTextPrimary, _lightTextSecondary),
     extensions: const [

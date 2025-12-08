@@ -25,13 +25,20 @@ class SideMenu extends StatelessWidget {
 
   static const double _collapsedWidth = 72;
 
+  /// ⚠️ Індекси topItems:
+  /// 0 – Dashboard
+  /// 1 – Мапа покриття
+  /// 2 – Підрозділи
+  /// 3 – Облік засобів
+  /// 4 – Обслуговування
+  /// 5 – Сценарії
   static const List<_MenuItemData> _topItems = [
     _MenuItemData(icon: Icons.dashboard_outlined, label: 'Dashboard'),
     _MenuItemData(icon: Icons.map_outlined, label: 'Мапа покриття'),
     _MenuItemData(icon: Icons.shield_outlined, label: 'Підрозділи'),
     _MenuItemData(icon: Icons.devices_other_outlined, label: 'Облік засобів'),
     _MenuItemData(icon: Icons.build_circle_outlined, label: 'Обслуговування'),
-    _MenuItemData(icon: Icons.article_outlined, label: 'Журнал аудиту'),
+    _MenuItemData(icon: Icons.analytics_outlined, label: 'Сценарії'),
   ];
 
   static const List<_MenuItemData> _bottomItems = [
@@ -61,46 +68,43 @@ class SideMenu extends StatelessWidget {
           // Хедер з логотипом — завжди по центру по горизонталі
           GestureDetector(
             onTap: () => onExpandedChanged(!isExpanded),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12.0),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final bool canShowText =
-                      isExpanded && constraints.maxWidth > 140;
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final bool canShowText =
+                    isExpanded && constraints.maxWidth > 140;
 
-                  return Row(
-                    mainAxisSize: MainAxisSize.min,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      SvgPicture.asset(
-                        'assets/icons/trunkops_logo.svg',
-                        width: 28,
-                        height: 28,
-                        colorFilter: ColorFilter.mode(
-                          extra.warning, // золото з теми
-                          BlendMode.srcIn,
-                        ),
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    SvgPicture.asset(
+                      'assets/icons/trunkops_logo.svg',
+                      width: 28,
+                      height: 28,
+                      colorFilter: ColorFilter.mode(
+                        extra.warning, // золото з теми
+                        BlendMode.srcIn,
                       ),
-                      if (canShowText) ...[
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: Text(
-                            'TrunkOps',
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            softWrap: false,
-                            style: theme.textTheme.titleLarge?.copyWith(
-                              fontFamily: 'Volja',
-                              fontSize: 18,
-                              color: colorScheme.onSurface,
-                            ),
+                    ),
+                    if (canShowText) ...[
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          'TrunkOps',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          softWrap: false,
+                          style: theme.textTheme.titleLarge?.copyWith(
+                            fontFamily: 'Volja',
+                            fontSize: 18,
+                            color: colorScheme.onSurface,
                           ),
                         ),
-                      ],
+                      ),
                     ],
-                  );
-                },
-              ),
+                  ],
+                );
+              },
             ),
           ),
 

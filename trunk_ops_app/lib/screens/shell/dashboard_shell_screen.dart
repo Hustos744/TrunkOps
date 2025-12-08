@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:trunk_ops_app/screens/shell/pages/assets_page.dart';
-import 'package:trunk_ops_app/screens/shell/pages/audit_log_page.dart';
 import 'package:trunk_ops_app/screens/shell/pages/maintenance_page.dart';
 import 'package:trunk_ops_app/screens/shell/pages/notifications_page.dart';
 import 'package:trunk_ops_app/screens/shell/pages/settings_page.dart';
@@ -9,6 +8,7 @@ import 'package:trunk_ops_app/theme/app_colors.dart';
 import '../../widgets/side_menu.dart';
 import 'pages/coverage_page.dart';
 import 'pages/dashboard_page.dart';
+import 'pages/scenarios_page.dart'; // 👈 ДОДАНО: сторінка сценаріїв
 import 'pages/units_page.dart';
 
 class DashboardShellScreen extends StatefulWidget {
@@ -32,17 +32,14 @@ class _DashboardShellScreenState extends State<DashboardShellScreen> {
 
     return Scaffold(
       // темний "outer" фон навколо всієї панелі
-      backgroundColor: colorScheme.background,
+      backgroundColor: colorScheme.surface,
       body: SafeArea(
         child: Container(
           // світліша робоча панель
           decoration: BoxDecoration(
             color: extra.surfaceSubtle,
             borderRadius: BorderRadius.circular(9),
-            border: Border.all(
-              color: extra.borderDefault.withOpacity(0.9),
-              width: 1.1,
-            ),
+            border: Border.all(color: extra.borderDefault.withOpacity(0.9)),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.35),
@@ -83,15 +80,29 @@ class _DashboardShellScreenState extends State<DashboardShellScreen> {
                     IndexedStack(
                       index: _selectedIndex,
                       children: const [
+                        // 0 – Dashboard
                         DashboardPage(),
+
+                        // 1 – Мапа покриття
                         CoveragePage(),
+
+                        // 2 – Підрозділи
                         UnitsPage(),
+
+                        // 3 – Облік засобів
                         AssetsPage(),
+
+                        // 4 – Обслуговування
                         MaintenancePage(),
-                        AuditLogPage(),
+
+                        // 5 – Сценарії
+                        ScenariosPage(),
+
+                        // 6 – Налаштування
                         SettingsPage(),
+
+                        // 7 – Сповіщення
                         NotificationsPage(),
-                        // index 8 — logout, контент не потрібен
                       ],
                     ),
 

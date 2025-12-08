@@ -101,7 +101,7 @@ class NotificationsPage extends StatelessWidget {
           final bool unread = n['status'] == 'unread';
           final Color rowBg = unread ? extra.accentSoft : Colors.transparent;
           return DataRow(
-            color: MaterialStateProperty.resolveWith<Color?>((states) => rowBg),
+            color: WidgetStateProperty.resolveWith<Color?>((states) => rowBg),
             cells: [
               DataCell(
                 Icon(

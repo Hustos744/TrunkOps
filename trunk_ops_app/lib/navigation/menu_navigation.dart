@@ -8,7 +8,7 @@ const assetsRoute = '/assets';
 const maintenanceRoute = '/maintenance';
 const auditRoute = '/audit-log';
 const settingsRoute = '/settings';
-const notificationsRoute = '/notifications';
+const scenariosRoute = '/scenarios';
 // const logoutRoute = '/logout'; // Logout зробимо дією, не сторінкою
 
 void handleMenuTap(BuildContext context, int index) {
@@ -33,16 +33,17 @@ void handleMenuTap(BuildContext context, int index) {
       targetRoute = maintenanceRoute;
       break;
     case 5:
-      targetRoute = auditRoute;
+      targetRoute = scenariosRoute;
       break;
     case 6:
       targetRoute = settingsRoute;
       break;
     case 7:
-      targetRoute = notificationsRoute;
+      // якщо це має бути «Сповіщення», краще зробити окремий notificationsRoute
+      targetRoute = auditRoute;
       break;
     case 8:
-      // TODO: тут буде логіка виходу (очистка токена + перехід на LoginScreen)
+      // TODO: логіка виходу (очистка токена + перехід на LoginScreen)
       return;
   }
 

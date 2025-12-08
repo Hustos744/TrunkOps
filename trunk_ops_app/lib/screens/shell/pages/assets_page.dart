@@ -1,23 +1,705 @@
+import 'dart:convert';
+import 'dart:io';
+import 'dart:math' as math;
+import 'dart:typed_data';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:trunk_ops_app/models/asset.dart';
+import 'package:trunk_ops_app/models/unit.dart';
+import 'package:trunk_ops_app/services/asset_local_repository.dart';
+import 'package:trunk_ops_app/services/unit_local_repository.dart';
 import 'package:trunk_ops_app/theme/app_colors.dart';
 
-class AssetsPage extends StatelessWidget {
+class AssetsPage extends StatefulWidget {
   const AssetsPage({super.key});
 
   @override
+  State<AssetsPage> createState() => _AssetsPageState();
+}
+
+class _AssetsPageState extends State<AssetsPage> {
+  final AssetLocalRepository _repo = AssetLocalRepository();
+  final UnitLocalRepository _unitRepo = UnitLocalRepository();
+
+  bool _isLoading = true;
+  List<Asset> _allAssets = [];
+
+  // Підрозділи з UnitsPage
+  List<Unit> _units = [];
+  bool _isUnitsLoading = true;
+
+  // Фільтри / пошук
+  String _searchQuery = '';
+  String _typeFilter = 'Усі типи';
+  String _statusFilter = 'Усі статуси';
+  String _unitFilter = 'Усі підрозділи';
+
+  // Для поля пошуку — стабільний контролер
+  final TextEditingController _searchController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUnits();
+    _loadAssets();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadAssets() async {
+    setState(() => _isLoading = true);
+
+    final assets = await _repo.getAll();
+
+    setState(() {
+      _allAssets = assets;
+      _isLoading = false;
+    });
+  }
+
+  Future<void> _loadUnits() async {
+    final units = await _unitRepo.getAll();
+    setState(() {
+      _units = units;
+      _isUnitsLoading = false;
+    });
+  }
+
+  // Фільтровані засоби
+  List<Asset> get _filteredAssets {
+    return _allAssets.where((a) {
+      final q = _searchQuery.trim().toLowerCase();
+      if (q.isNotEmpty) {
+        final inSearch =
+            a.invNumber.toLowerCase().contains(q) ||
+            a.type.toLowerCase().contains(q) ||
+            a.model.toLowerCase().contains(q) ||
+            a.unit.toLowerCase().contains(q) ||
+            a.location.toLowerCase().contains(q);
+        if (!inSearch) return false;
+      }
+
+      if (_typeFilter != 'Усі типи' &&
+          a.type.toLowerCase() != _typeFilter.toLowerCase()) {
+        return false;
+      }
+
+      if (_statusFilter != 'Усі статуси' && a.status != _statusFilter) {
+        return false;
+      }
+
+      if (_unitFilter != 'Усі підрозділи' &&
+          a.unit.toLowerCase() != _unitFilter.toLowerCase()) {
+        return false;
+      }
+
+      return true;
+    }).toList();
+  }
+
+  // Метрики
+  int get _totalAssets => _allAssets.length;
+  int get _inServiceAssets =>
+      _allAssets.where((a) => a.status == 'У строю').length;
+  int get _maintenanceAssets =>
+      _allAssets.where((a) => a.status == 'На ремонті').length;
+  int get _reserveAssets =>
+      _allAssets.where((a) => a.status == 'Резерв').length;
+
+  void _resetFilters() {
+    setState(() {
+      _searchQuery = '';
+      _searchController.text = '';
+      _typeFilter = 'Усі типи';
+      _statusFilter = 'Усі статуси';
+      _unitFilter = 'Усі підрозділи';
+    });
+  }
+
+  // ───────────────── ІМПОРТ / ЕКСПОРТ В ТЕКСТОВИЙ ФАЙЛ ─────────────────
+
+  Map<String, dynamic> _assetToMap(Asset a) {
+    return {
+      'id': a.id,
+      'invNumber': a.invNumber,
+      'type': a.type,
+      'model': a.model,
+      'unit': a.unit,
+      'status': a.status,
+      'location': a.location,
+      'lastCheck': a.lastCheck,
+      'txPowerW': a.txPowerW,
+      'frequencyMHz': a.frequencyMHz,
+      'antennaHeightM': a.antennaHeightM,
+      'antennaGainDb': a.antennaGainDb,
+    };
+  }
+
+  Asset _assetFromMap(Map<String, dynamic> m) {
+    double? toDouble(dynamic v) {
+      if (v == null) return null;
+      if (v is num) return v.toDouble();
+      if (v is String && v.trim().isNotEmpty) {
+        return double.tryParse(v.trim());
+      }
+      return null;
+    }
+
+    return Asset(
+      id: (m['id'] ?? 0) as int,
+      invNumber: (m['invNumber'] ?? '') as String,
+      type: (m['type'] ?? 'Невизначено') as String,
+      model: (m['model'] ?? 'Невизначено') as String,
+      unit: (m['unit'] ?? 'Невизначено') as String,
+      status: (m['status'] ?? 'У строю') as String,
+      location: (m['location'] ?? 'Невизначено') as String,
+      lastCheck: (m['lastCheck'] ?? '-') as String,
+      txPowerW: toDouble(m['txPowerW']),
+      frequencyMHz: toDouble(m['frequencyMHz']),
+      antennaHeightM: toDouble(m['antennaHeightM']),
+      antennaGainDb: toDouble(m['antennaGainDb']),
+    );
+  }
+
+  Future<void> _exportAssets() async {
+    if (_allAssets.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Немає даних для експорту')));
+      return;
+    }
+
+    final list = _allAssets.map(_assetToMap).toList();
+    final jsonStr = const JsonEncoder.withIndent('  ').convert(list);
+    final bytes = Uint8List.fromList(utf8.encode(jsonStr));
+
+    final now = DateTime.now();
+    final ts = now
+        .toIso8601String()
+        .replaceAll(':', '-')
+        .replaceAll('.', '-'); // щоб було без заборонених символів
+    final fileName = 'trunk_ops_assets_$ts.txt';
+
+    try {
+      // Експорт прямо в папку Download на Android
+      final downloadsDir = Directory('/storage/emulated/0/Download');
+
+      if (!await downloadsDir.exists()) {
+        await downloadsDir.create(recursive: true);
+      }
+
+      final file = File('${downloadsDir.path}/$fileName');
+      await file.writeAsBytes(bytes);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Дані експортовано у файл:\nDownload/$fileName'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Помилка експорту: $e')));
+      }
+    }
+  }
+
+  Future<void> _importAssets() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.any, // беремо будь-який, але перевіряємо розширення
+        allowMultiple: false,
+        withData: true,
+      );
+
+      if (result == null || result.files.isEmpty) {
+        return; // користувач скасував
+      }
+
+      final file = result.files.first;
+      final ext = (file.extension ?? '').toLowerCase();
+
+      if (ext != 'txt' && ext != 'json') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Оберіть текстовий файл з розширенням .txt або .json',
+            ),
+          ),
+        );
+        return;
+      }
+
+      final fileBytes = file.bytes;
+      if (fileBytes == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Не вдалося прочитати файл (bytes == null)'),
+          ),
+        );
+        return;
+      }
+
+      final raw = utf8.decode(fileBytes);
+      final decoded = jsonDecode(raw);
+
+      if (decoded is! List) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Некоректний формат: очікується JSON-масив'),
+          ),
+        );
+        return;
+      }
+
+      final list = <Asset>[];
+      for (final item in decoded) {
+        if (item is Map<String, dynamic>) {
+          list.add(_assetFromMap(item));
+        } else if (item is Map) {
+          list.add(
+            _assetFromMap(item.map((k, v) => MapEntry(k.toString(), v))),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Один з елементів масиву має некоректний формат'),
+            ),
+          );
+          return;
+        }
+      }
+
+      if (list.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Файл не містить жодного запису')),
+        );
+        return;
+      }
+
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Підтвердження імпорту'),
+          content: Text(
+            'Буде імпортовано ${list.length} запис(ів) із файлу '
+            '"${file.name}". Поточні дані будуть замінені. Продовжити?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Скасувати'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Імпортувати'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed != true) return;
+
+      // Перезаписуємо локальне сховище
+      for (final a in _allAssets) {
+        await _repo.delete(a.id);
+      }
+      for (final a in list) {
+        await _repo.create(a);
+      }
+      await _loadAssets();
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Дані успішно імпортовано з файлу')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Помилка імпорту: $e')));
+      }
+    }
+  }
+
+  Future<void> _showAssetDialog({Asset? asset}) async {
+    final isEdit = asset != null;
+
+    final invController = TextEditingController(text: asset?.invNumber ?? '');
+    final typeController = TextEditingController(text: asset?.type ?? '');
+    final modelController = TextEditingController(text: asset?.model ?? '');
+    final txPowerController = TextEditingController(
+      text: asset?.txPowerW?.toString() ?? '',
+    );
+    final freqController = TextEditingController(
+      text: asset?.frequencyMHz?.toString() ?? '',
+    );
+    final heightController = TextEditingController(
+      text: asset?.antennaHeightM?.toString() ?? '',
+    );
+    final gainController = TextEditingController(
+      text: asset?.antennaGainDb?.toString() ?? '',
+    );
+    final locationController = TextEditingController(
+      text: asset?.location ?? '',
+    );
+    final lastCheckController = TextEditingController(
+      text: asset?.lastCheck ?? '',
+    );
+
+    String status = asset?.status ?? 'У строю';
+
+    // УНІКАЛЬНИЙ список назв підрозділів + "Резерв"
+    final Set<String> unitNamesSet = {'Резерв', ..._units.map((u) => u.name)};
+    final List<String> allUnitNames = unitNamesSet.toList();
+
+    // Початково вибраний підрозділ
+    String? selectedUnitName;
+    if (asset != null && allUnitNames.contains(asset.unit)) {
+      selectedUnitName = asset.unit;
+    } else {
+      selectedUnitName = 'Резерв';
+    }
+
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setStateDialog) {
+            final theme = Theme.of(ctx);
+            final scheme = theme.colorScheme;
+            final extra = theme.extension<AppExtraColors>();
+            final screenWidth = MediaQuery.of(ctx).size.width;
+
+            final scale = (screenWidth / 1200).clamp(0.8, 1.2);
+
+            return AlertDialog(
+              backgroundColor: scheme.surface,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12 * scale),
+              ),
+              insetPadding: EdgeInsets.symmetric(
+                horizontal: 24 * scale,
+                vertical: 16 * scale,
+              ),
+              title: Text(
+                isEdit ? 'Редагувати засіб' : 'Новий засіб',
+                style: theme.textTheme.titleLarge?.copyWith(
+                  fontSize:
+                      (theme.textTheme.titleLarge?.fontSize ?? 20) * scale,
+                ),
+              ),
+              content: SizedBox(
+                width: math.min(MediaQuery.of(ctx).size.width * 0.9, 500),
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      TextField(
+                        controller: invController,
+                        decoration: const InputDecoration(
+                          labelText: 'Інвентарний номер',
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: typeController,
+                        decoration: const InputDecoration(
+                          labelText: 'Тип засобу',
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: modelController,
+                        decoration: const InputDecoration(labelText: 'Модель'),
+                      ),
+                      const SizedBox(height: 8),
+
+                      // ───────── Підрозділ із UnitsPage + "Резерв" ─────────
+                      if (_isUnitsLoading)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8.0),
+                          child: LinearProgressIndicator(),
+                        )
+                      else
+                        DropdownButtonFormField<String>(
+                          // гарантуємо, що value є серед allUnitNames
+                          value: allUnitNames.contains(selectedUnitName)
+                              ? selectedUnitName
+                              : 'Резерв',
+                          isExpanded: true,
+                          decoration: const InputDecoration(
+                            labelText: 'Підрозділ',
+                          ),
+                          items: allUnitNames
+                              .map(
+                                (name) => DropdownMenuItem<String>(
+                                  value: name,
+                                  child: Text(name),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: (v) {
+                            setStateDialog(() {
+                              selectedUnitName = v;
+                            });
+                          },
+                        ),
+                      const SizedBox(height: 8),
+
+                      DropdownButtonFormField<String>(
+                        value: status,
+                        isExpanded: true,
+                        decoration: const InputDecoration(labelText: 'Статус'),
+                        items: const [
+                          DropdownMenuItem(
+                            value: 'У строю',
+                            child: Text('У строю'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'На ремонті',
+                            child: Text('На ремонті'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'Резерв',
+                            child: Text('Резерв'),
+                          ),
+                        ],
+                        onChanged: (v) {
+                          if (v != null) {
+                            setStateDialog(() {
+                              status = v;
+                            });
+                          }
+                        },
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Радіопараметри (для зон покриття)',
+                          style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+
+                      TextField(
+                        controller: txPowerController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Потужність передавача, Вт',
+                          hintText: 'Напр. 25',
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: freqController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Робоча частота, МГц',
+                          hintText: 'Напр. 450',
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: heightController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Висота антени, м',
+                          hintText: 'Напр. 30',
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: gainController,
+                        keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true,
+                        ),
+                        decoration: const InputDecoration(
+                          labelText: 'Підсилення антени, дБ',
+                          hintText: 'Напр. 6',
+                        ),
+                      ),
+
+                      const SizedBox(height: 12),
+
+                      TextField(
+                        controller: locationController,
+                        decoration: const InputDecoration(
+                          labelText: 'Місцезнаходження',
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: lastCheckController,
+                        decoration: const InputDecoration(
+                          labelText: 'Остання перевірка (дата)',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actionsPadding: EdgeInsets.symmetric(
+                horizontal: 16 * scale,
+                vertical: 8 * scale,
+              ),
+              actionsAlignment: MainAxisAlignment.end,
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: const Text('Скасувати'),
+                ),
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: extra?.accent ?? scheme.primary,
+                  ),
+                  onPressed: () async {
+                    final inv = invController.text.trim();
+                    if (inv.isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Інвентарний номер обовʼязковий'),
+                        ),
+                      );
+                      return;
+                    }
+
+                    double? parseDouble(String s) =>
+                        s.trim().isEmpty ? null : double.tryParse(s.trim());
+
+                    final newAsset = Asset(
+                      id: asset?.id ?? 0,
+                      invNumber: inv,
+                      type: typeController.text.trim().isEmpty
+                          ? 'Невизначено'
+                          : typeController.text.trim(),
+                      model: modelController.text.trim().isEmpty
+                          ? 'Невизначено'
+                          : modelController.text.trim(),
+                      unit:
+                          (allUnitNames.contains(selectedUnitName)
+                              ? selectedUnitName
+                              : 'Резерв') ??
+                          'Резерв',
+                      status: status,
+                      location: locationController.text.trim().isEmpty
+                          ? 'Невизначено'
+                          : locationController.text.trim(),
+                      lastCheck: lastCheckController.text.trim().isEmpty
+                          ? '-'
+                          : lastCheckController.text.trim(),
+                      txPowerW: parseDouble(txPowerController.text),
+                      frequencyMHz: parseDouble(freqController.text),
+                      antennaHeightM: parseDouble(heightController.text),
+                      antennaGainDb: parseDouble(gainController.text),
+                    );
+
+                    if (isEdit) {
+                      await _repo.update(newAsset);
+                    } else {
+                      await _repo.create(newAsset);
+                    }
+
+                    await _loadAssets();
+                    if (context.mounted) {
+                      Navigator.of(ctx).pop(true);
+                    }
+                  },
+                  child: Text(isEdit ? 'Зберегти' : 'Створити'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (result == true) {
+      // вже перезавантажили
+    }
+  }
+
+  Future<void> _confirmDelete(Asset asset) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Видалити засіб'),
+          content: Text(
+            'Ви впевнені, що хочете видалити "${asset.invNumber}"?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Скасувати'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Видалити'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result == true) {
+      await _repo.delete(asset.id);
+      await _loadAssets();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final extra = theme.extension<AppExtraColors>();
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final screenWidth = constraints.maxWidth;
-        final titleFontSize = screenWidth < 900 ? 20.0 : 24.0;
-        final subtitleFontSize = screenWidth < 900 ? 12.0 : 14.0;
+        final maxWidth = constraints.maxWidth;
+
+        // Плавний scale для текстів / елементів
+        final scale = (maxWidth / 1200).clamp(0.8, 1.2);
+        final titleFontSize = 24.0 * scale;
+        final subtitleFontSize = 13.0 * scale;
+
+        // Динамічна кількість карток у рядку
+        const spacing = 16.0;
+        final minCardWidth = maxWidth * 0.22; // ~4 картки на широкий екран
+        final cardsPerRowRaw = (maxWidth / (minCardWidth + spacing)).floor();
+        final cardsPerRow = cardsPerRowRaw.clamp(1, 4);
+        final cardWidth =
+            (maxWidth - spacing * (cardsPerRow - 1)) / cardsPerRow;
+
+        // На великих екранах — таблиця, на маленьких — список карток
+        final bool useDesktopTable = maxWidth >= 900;
 
         return Scrollbar(
-          thumbVisibility: false, // один вертикальний скрол на всю сторінку
+          thumbVisibility: false,
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(16.0),
             child: ConstrainedBox(
@@ -25,12 +707,13 @@ class AssetsPage extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // ───────────── Заголовок + кнопки ─────────────
+                  // ───────── Заголовок + кнопки ─────────
                   LayoutBuilder(
                     builder: (context, headerConstraints) {
-                      final isNarrow = headerConstraints.maxWidth < 900;
+                      final headerWidth = headerConstraints.maxWidth;
+                      final isNarrowHeader = headerWidth < 700;
 
-                      final title = Column(
+                      final titleBlock = Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
@@ -38,7 +721,7 @@ class AssetsPage extends StatelessWidget {
                             style: theme.textTheme.headlineLarge?.copyWith(
                               fontSize: titleFontSize,
                               fontWeight: FontWeight.w600,
-                              color: scheme.onBackground,
+                              color: scheme.onSurface,
                             ),
                           ),
                           const SizedBox(height: 4),
@@ -48,7 +731,7 @@ class AssetsPage extends StatelessWidget {
                               fontSize: subtitleFontSize,
                               color:
                                   theme.textTheme.bodySmall?.color ??
-                                  scheme.onBackground.withOpacity(0.7),
+                                  scheme.onSurface.withOpacity(0.7),
                             ),
                           ),
                         ],
@@ -57,14 +740,12 @@ class AssetsPage extends StatelessWidget {
                       final actions = Wrap(
                         spacing: 8,
                         runSpacing: 8,
-                        alignment: isNarrow
+                        alignment: isNarrowHeader
                             ? WrapAlignment.start
                             : WrapAlignment.end,
                         children: [
                           OutlinedButton.icon(
-                            onPressed: () {
-                              // TODO: імпорт з Excel/CSV
-                            },
+                            onPressed: _importAssets,
                             style: OutlinedButton.styleFrom(
                               side: BorderSide(
                                 color:
@@ -85,9 +766,7 @@ class AssetsPage extends StatelessWidget {
                             ),
                           ),
                           OutlinedButton.icon(
-                            onPressed: () {
-                              // TODO: експорт
-                            },
+                            onPressed: _exportAssets,
                             style: OutlinedButton.styleFrom(
                               side: BorderSide(
                                 color:
@@ -108,9 +787,7 @@ class AssetsPage extends StatelessWidget {
                             ),
                           ),
                           FilledButton.icon(
-                            onPressed: () {
-                              // TODO: додати новий засіб
-                            },
+                            onPressed: () => _showAssetDialog(),
                             style: FilledButton.styleFrom(
                               backgroundColor: extra?.accent ?? scheme.primary,
                               foregroundColor: scheme.onPrimary,
@@ -127,11 +804,11 @@ class AssetsPage extends StatelessWidget {
                         ],
                       );
 
-                      if (isNarrow) {
+                      if (isNarrowHeader) {
                         return Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            title,
+                            titleBlock,
                             const SizedBox(height: 12),
                             actions,
                           ],
@@ -139,8 +816,9 @@ class AssetsPage extends StatelessWidget {
                       }
 
                       return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(child: title),
+                          Expanded(child: titleBlock),
                           const SizedBox(width: 16),
                           actions,
                         ],
@@ -148,80 +826,83 @@ class AssetsPage extends StatelessWidget {
                     },
                   ),
 
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 24),
 
-                  // ───────────── Карточки-метрики ─────────────
-                  LayoutBuilder(
-                    builder: (context, metricsConstraints) {
-                      final maxWidth = metricsConstraints.maxWidth;
-                      int columns;
-                      if (maxWidth >= 1300) {
-                        columns = 4;
-                      } else if (maxWidth >= 900) {
-                        columns = 3;
-                      } else if (maxWidth >= 600) {
-                        columns = 2;
-                      } else {
-                        columns = 1;
-                      }
-
-                      const spacing = 12.0;
-                      final itemWidth =
-                          (maxWidth - spacing * (columns - 1)) / columns;
-
-                      return Wrap(
-                        spacing: spacing,
-                        runSpacing: spacing,
-                        children: [
-                          SizedBox(
-                            width: itemWidth,
-                            child: const _MetricCard(
-                              title: 'Усього засобів',
-                              value: '248',
-                              trendLabel: '+12 за місяць',
-                              trendPositive: true,
-                            ),
-                          ),
-                          SizedBox(
-                            width: itemWidth,
-                            child: const _MetricCard(
-                              title: 'У строю',
-                              value: '201',
-                              trendLabel: '+4 за тиждень',
-                              trendPositive: true,
-                            ),
-                          ),
-                          SizedBox(
-                            width: itemWidth,
-                            child: const _MetricCard(
-                              title: 'На ремонті',
-                              value: '31',
-                              trendLabel: '+3 заявки',
-                              trendPositive: false,
-                            ),
-                          ),
-                          SizedBox(
-                            width: itemWidth,
-                            child: const _MetricCard(
-                              title: 'Резерв / склад',
-                              value: '16',
-                              trendLabel: 'оновлено 2 дні тому',
-                              trendPositive: true,
-                            ),
-                          ),
-                        ],
-                      );
-                    },
+                  // ───────── Метрики ─────────
+                  Wrap(
+                    spacing: spacing,
+                    runSpacing: spacing,
+                    children: [
+                      SizedBox(
+                        width: cardWidth,
+                        child: _MetricCard(
+                          title: 'Усього засобів',
+                          value: '$_totalAssets',
+                          trendLabel: 'Локально збережені',
+                          trendPositive: true,
+                        ),
+                      ),
+                      SizedBox(
+                        width: cardWidth,
+                        child: _MetricCard(
+                          title: 'У строю',
+                          value: '$_inServiceAssets',
+                          trendLabel: 'Стан "У строю"',
+                          trendPositive: true,
+                        ),
+                      ),
+                      SizedBox(
+                        width: cardWidth,
+                        child: _MetricCard(
+                          title: 'На ремонті',
+                          value: '$_maintenanceAssets',
+                          trendLabel: 'Потребують уваги',
+                          trendPositive: false,
+                        ),
+                      ),
+                      SizedBox(
+                        width: cardWidth,
+                        child: _MetricCard(
+                          title: 'Резерв / склад',
+                          value: '$_reserveAssets',
+                          trendLabel: 'Статус "Резерв"',
+                          trendPositive: true,
+                        ),
+                      ),
+                    ],
                   ),
 
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 24),
 
-                  // ───────────── Фільтри ─────────────
-                  const _AssetsFiltersBar(),
+                  // ───────── Фільтри ─────────
+                  _AssetsFiltersBar(
+                    searchController: _searchController,
+                    onSearchChanged: (v) {
+                      setState(() => _searchQuery = v);
+                    },
+                    typeFilter: _typeFilter,
+                    statusFilter: _statusFilter,
+                    unitFilter: _unitFilter,
+                    availableTypes: [
+                      'Усі типи',
+                      ...{for (final a in _allAssets) a.type},
+                    ],
+                    availableUnits: [
+                      'Усі підрозділи',
+                      ...{for (final a in _allAssets) a.unit},
+                    ],
+                    onTypeChanged: (v) =>
+                        setState(() => _typeFilter = v ?? 'Усі типи'),
+                    onStatusChanged: (v) =>
+                        setState(() => _statusFilter = v ?? 'Усі статуси'),
+                    onUnitChanged: (v) =>
+                        setState(() => _unitFilter = v ?? 'Усі підрозділи'),
+                    onResetFilters: _resetFilters,
+                  ),
 
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
 
-                  // ───────────── Таблиця ─────────────
+                  // ───────── Реєстр ─────────
                   Container(
                     decoration: BoxDecoration(
                       color: extra?.surfaceElevated ?? scheme.surface,
@@ -240,8 +921,10 @@ class AssetsPage extends StatelessWidget {
                             vertical: 10,
                           ),
                           decoration: BoxDecoration(
-                            color:
-                                extra?.surfaceSubtle ?? scheme.surfaceVariant,
+                            color: extra?.surfaceSubtle ?? scheme.surface,
+                            borderRadius: const BorderRadius.vertical(
+                              top: Radius.circular(16),
+                            ),
                             border: Border(
                               bottom: BorderSide(
                                 color:
@@ -262,9 +945,7 @@ class AssetsPage extends StatelessWidget {
                               ),
                               const Spacer(),
                               IconButton(
-                                onPressed: () {
-                                  // TODO: оновити дані
-                                },
+                                onPressed: _loadAssets,
                                 icon: Icon(
                                   Icons.refresh,
                                   size: 20,
@@ -278,75 +959,26 @@ class AssetsPage extends StatelessWidget {
                           ),
                         ),
 
-                        // Горизонтальний скрол таблиці, вертикаль — у всієї сторінки
-                        SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: DataTable(
-                            headingTextStyle: theme.textTheme.labelMedium
-                                ?.copyWith(
-                                  fontFamily: 'Inter',
-                                  fontWeight: FontWeight.w600,
-                                  color: scheme.onSurface,
-                                ),
-                            dataTextStyle: theme.textTheme.bodyMedium?.copyWith(
-                              fontFamily: 'Inter',
-                              color: scheme.onSurface.withOpacity(0.9),
+                        if (_filteredAssets.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.all(24.0),
+                            child: Text(
+                              'Засоби відсутні. Додайте перший засіб.',
+                              style: theme.textTheme.bodyMedium,
                             ),
-                            columnSpacing: screenWidth < 900 ? 20 : 32,
-                            dividerThickness: 0.6,
-                            columns: const [
-                              DataColumn(label: Text('Інв. №')),
-                              DataColumn(label: Text('Тип засобу')),
-                              DataColumn(label: Text('Модель')),
-                              DataColumn(label: Text('Підрозділ')),
-                              DataColumn(label: Text('Статус')),
-                              DataColumn(label: Text('Місцезнаходження')),
-                              DataColumn(label: Text('Остання перевірка')),
-                            ],
-                            rows: [
-                              _assetRow(
-                                context,
-                                inv: 'TRK-0001',
-                                type: 'Радіостанція портативна',
-                                model: 'Motorola DP4801e',
-                                unit: '1 рота / 1 взвод',
-                                status: 'У строю',
-                                location: 'Польовий КП',
-                                lastCheck: '12.11.2025',
-                              ),
-                              _assetRow(
-                                context,
-                                inv: 'TRK-0034',
-                                type: 'Радіостанція автомобільна',
-                                model: 'Hytera MD785G',
-                                unit: 'Рота звʼязку',
-                                status: 'На ремонті',
-                                location: 'Рембаза №2',
-                                lastCheck: '05.11.2025',
-                              ),
-                              _assetRow(
-                                context,
-                                inv: 'TRK-0112',
-                                type: 'Ретранслятор',
-                                model: 'Motorola SLR 5500',
-                                unit: 'Батальйонний вузол',
-                                status: 'У строю',
-                                location: 'Позиція Р-3',
-                                lastCheck: '29.10.2025',
-                              ),
-                              _assetRow(
-                                context,
-                                inv: 'TRK-0178',
-                                type: 'Радіостанція портативна',
-                                model: 'Harris RF-7850',
-                                unit: 'Резерв',
-                                status: 'Резерв',
-                                location: 'Склад №4',
-                                lastCheck: '01.11.2025',
-                              ),
-                            ],
+                          )
+                        else if (useDesktopTable)
+                          _DesktopAssetsTable(
+                            assets: _filteredAssets,
+                            onEdit: (a) => _showAssetDialog(asset: a),
+                            onDelete: _confirmDelete,
+                          )
+                        else
+                          _MobileAssetsList(
+                            assets: _filteredAssets,
+                            onEdit: (a) => _showAssetDialog(asset: a),
+                            onDelete: _confirmDelete,
                           ),
-                        ),
                       ],
                     ),
                   ),
@@ -362,7 +994,9 @@ class AssetsPage extends StatelessWidget {
   }
 }
 
-// ───────────────── Карточка метрики ─────────────────
+//
+// ───────────────── КАРТКИ-МЕТРИКИ ─────────────────
+//
 
 class _MetricCard extends StatelessWidget {
   final String title;
@@ -384,22 +1018,26 @@ class _MetricCard extends StatelessWidget {
     final extra = theme.extension<AppExtraColors>();
     final screenWidth = MediaQuery.of(context).size.width;
 
-    final valueFontSize = screenWidth < 900 ? 20.0 : 24.0;
-    final titleFontSize = screenWidth < 900 ? 12.0 : 14.0;
+    final scale = (screenWidth / 1200).clamp(0.8, 1.2);
+    final valueFontSize = 22.0 * scale;
+    final titleFontSize = 13.0 * scale;
 
     final Color trendColor = trendPositive
         ? (extra?.success ?? scheme.primary)
         : scheme.error;
 
     return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: 14 * scale,
+        vertical: 12 * scale,
+      ),
       decoration: BoxDecoration(
         color: extra?.surfaceElevated ?? scheme.surface,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(12 * scale),
         border: Border.all(
           color: extra?.borderDefault ?? scheme.outline.withOpacity(0.6),
         ),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -413,7 +1051,7 @@ class _MetricCard extends StatelessWidget {
                   scheme.onSurface.withOpacity(0.8),
             ),
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: 6 * scale),
           Text(
             value,
             style: theme.textTheme.headlineMedium?.copyWith(
@@ -423,15 +1061,15 @@ class _MetricCard extends StatelessWidget {
               color: scheme.onSurface,
             ),
           ),
-          const SizedBox(height: 6),
+          SizedBox(height: 4 * scale),
           Row(
             children: [
               Icon(
                 trendPositive ? Icons.trending_up : Icons.trending_down,
-                size: 16,
+                size: 16 * scale,
                 color: trendColor,
               ),
-              const SizedBox(width: 4),
+              SizedBox(width: 4 * scale),
               Flexible(
                 child: Text(
                   trendLabel,
@@ -440,6 +1078,8 @@ class _MetricCard extends StatelessWidget {
                   style: theme.textTheme.bodySmall?.copyWith(
                     fontFamily: 'Inter',
                     color: trendColor,
+                    fontSize:
+                        (theme.textTheme.bodySmall?.fontSize ?? 11) * scale,
                   ),
                 ),
               ),
@@ -451,10 +1091,39 @@ class _MetricCard extends StatelessWidget {
   }
 }
 
-// ───────────────── Панель фільтрів ─────────────────
+//
+// ───────────────── ПАНЕЛЬ ФІЛЬТРІВ ─────────────────
+//
 
 class _AssetsFiltersBar extends StatelessWidget {
-  const _AssetsFiltersBar();
+  final TextEditingController searchController;
+  final ValueChanged<String> onSearchChanged;
+
+  final String typeFilter;
+  final String statusFilter;
+  final String unitFilter;
+
+  final List<String> availableTypes;
+  final List<String> availableUnits;
+
+  final ValueChanged<String?> onTypeChanged;
+  final ValueChanged<String?> onStatusChanged;
+  final ValueChanged<String?> onUnitChanged;
+  final VoidCallback onResetFilters;
+
+  const _AssetsFiltersBar({
+    required this.searchController,
+    required this.onSearchChanged,
+    required this.typeFilter,
+    required this.statusFilter,
+    required this.unitFilter,
+    required this.availableTypes,
+    required this.availableUnits,
+    required this.onTypeChanged,
+    required this.onStatusChanged,
+    required this.onUnitChanged,
+    required this.onResetFilters,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -464,16 +1133,17 @@ class _AssetsFiltersBar extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final double maxWidth = constraints.maxWidth;
-        final bool isNarrowRow = maxWidth < 900;
+        final maxWidth = constraints.maxWidth;
         final bool isVeryNarrow = maxWidth < 700;
+        final bool isNarrowRow = maxWidth < 1100;
 
         final searchField = TextField(
-          style: TextStyle(
+          controller: searchController,
+          onChanged: onSearchChanged,
+          style: const TextStyle(
             fontFamily: 'Inter',
             fontSize: 14,
-            color: scheme.onSurface,
-          ),
+          ).copyWith(color: scheme.onSurface),
           decoration: InputDecoration(
             prefixIcon: Icon(
               Icons.search,
@@ -513,65 +1183,52 @@ class _AssetsFiltersBar extends StatelessWidget {
         );
 
         final typeDropdown = DropdownButtonFormField<String>(
-          value: null,
+          initialValue: typeFilter,
+          isExpanded: true,
           decoration: _dropdownDecoration(context, label: 'Тип засобу'),
-          items: const [
-            DropdownMenuItem(value: 'all', child: Text('Усі типи')),
-            DropdownMenuItem(value: 'portable', child: Text('Портативні')),
-            DropdownMenuItem(value: 'mobile', child: Text('Автомобільні')),
-            DropdownMenuItem(value: 'repeater', child: Text('Ретранслятори')),
-          ],
-          onChanged: (_) {},
+          items: availableTypes
+              .map((t) => DropdownMenuItem<String>(value: t, child: Text(t)))
+              .toList(),
+          onChanged: onTypeChanged,
         );
 
         final statusDropdown = DropdownButtonFormField<String>(
-          value: null,
+          initialValue: statusFilter,
+          isExpanded: true,
           decoration: _dropdownDecoration(context, label: 'Статус'),
-          items: const [
-            DropdownMenuItem(value: 'all', child: Text('Усі статуси')),
-            DropdownMenuItem(value: 'active', child: Text('У строю')),
-            DropdownMenuItem(value: 'maintenance', child: Text('На ремонті')),
-            DropdownMenuItem(value: 'reserve', child: Text('Резерв')),
-          ],
-          onChanged: (_) {},
+          items: const ['Усі статуси', 'У строю', 'На ремонті', 'Резерв']
+              .map((s) => DropdownMenuItem<String>(value: s, child: Text(s)))
+              .toList(),
+          onChanged: onStatusChanged,
         );
 
         final unitDropdown = DropdownButtonFormField<String>(
-          value: null,
+          initialValue: unitFilter,
+          isExpanded: true,
           decoration: _dropdownDecoration(context, label: 'Підрозділ'),
-          items: const [
-            DropdownMenuItem(value: 'all', child: Text('Усі підрозділи')),
-            DropdownMenuItem(value: 'unit1', child: Text('1 рота')),
-            DropdownMenuItem(value: 'unit2', child: Text('Рота звʼязку')),
-          ],
-          onChanged: (_) {},
+          items: availableUnits
+              .map((u) => DropdownMenuItem<String>(value: u, child: Text(u)))
+              .toList(),
+          onChanged: onUnitChanged,
         );
 
-        final resetButtonFull = TextButton.icon(
-          onPressed: () {
-            // TODO: скинути фільтри
-          },
+        final resetFull = TextButton.icon(
+          onPressed: onResetFilters,
           icon: const Icon(Icons.filter_alt_off, size: 18),
           label: const Text(
             'Скинути фільтри',
             style: TextStyle(fontFamily: 'Inter'),
           ),
-          style: TextButton.styleFrom(
-            foregroundColor: scheme.onBackground.withOpacity(0.8),
-          ),
         );
 
-        final resetButtonShort = TextButton.icon(
-          onPressed: () {},
+        final resetShort = TextButton.icon(
+          onPressed: onResetFilters,
           icon: const Icon(Icons.filter_alt_off, size: 18),
           label: const Text('Скинути', style: TextStyle(fontFamily: 'Inter')),
-          style: TextButton.styleFrom(
-            foregroundColor: scheme.onBackground.withOpacity(0.8),
-          ),
         );
 
         if (isVeryNarrow) {
-          // Дуже вузький екран — усе у стовпчик
+          // Все в колонку
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -583,21 +1240,18 @@ class _AssetsFiltersBar extends StatelessWidget {
               const SizedBox(height: 8),
               unitDropdown,
               const SizedBox(height: 8),
-              Align(alignment: Alignment.centerRight, child: resetButtonFull),
+              Align(alignment: Alignment.centerRight, child: resetFull),
             ],
           );
         }
 
         if (isNarrowRow) {
-          // Середня ширина (700–900) — пошук окремо, дропдауни в два рядки
+          // Пошук окремо, фільтри в 2 рядки, кнопка скидання окремим рядком
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // 1) Пошук на всю ширину
               searchField,
               const SizedBox(height: 8),
-
-              // 2) Перший ряд — тип + статус
               Row(
                 children: [
                   Expanded(child: typeDropdown),
@@ -606,21 +1260,15 @@ class _AssetsFiltersBar extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 8),
-
-              // 3) Другий ряд — підрозділ + кнопка "Скинути фільтри"
-              Row(
-                children: [
-                  Expanded(child: unitDropdown),
-                  const SizedBox(width: 12),
-                  resetButtonFull,
-                ],
-              ),
+              unitDropdown,
+              const SizedBox(height: 8),
+              Align(alignment: Alignment.centerRight, child: resetFull),
             ],
           );
         }
 
-        // 🔹 Широкі екрани — все в один ряд + коротка кнопка "Скинути"
-        final filtersRow = Row(
+        // Широкий екран — все в один ряд
+        final row = Row(
           children: [
             Flexible(flex: 3, child: searchField),
             const SizedBox(width: 12),
@@ -634,9 +1282,9 @@ class _AssetsFiltersBar extends StatelessWidget {
 
         return Row(
           children: [
-            Expanded(child: filtersRow),
+            Expanded(child: row),
             const SizedBox(width: 12),
-            resetButtonShort,
+            resetShort,
           ],
         );
       },
@@ -680,63 +1328,502 @@ class _AssetsFiltersBar extends StatelessWidget {
   }
 }
 
-// ───────────────── Хелпер для DataRow ─────────────────
+//
+// ───────────────── ДЕСКТОПНА ТАБЛИЦЯ ─────────────────
+//
 
-DataRow _assetRow(
-  BuildContext context, {
-  required String inv,
-  required String type,
-  required String model,
-  required String unit,
-  required String status,
-  required String location,
-  required String lastCheck,
-}) {
-  final theme = Theme.of(context);
-  final scheme = theme.colorScheme;
-  final extra = theme.extension<AppExtraColors>();
+class _DesktopAssetsTable extends StatelessWidget {
+  final List<Asset> assets;
+  final ValueChanged<Asset> onEdit;
+  final ValueChanged<Asset> onDelete;
 
-  Color statusColor;
-  switch (status) {
-    case 'У строю':
-      statusColor = extra?.success ?? const Color(0xFF7DD58C);
-      break;
-    case 'На ремонті':
-      statusColor = scheme.error;
-      break;
-    case 'Резерв':
-      statusColor = extra?.warning ?? const Color(0xFFFFC107);
-      break;
-    default:
-      statusColor =
-          theme.textTheme.bodySmall?.color ?? scheme.onSurface.withOpacity(0.6);
+  const _DesktopAssetsTable({
+    required this.assets,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final extra = Theme.of(context).extension<AppExtraColors>();
+
+    final dividerColor =
+        extra?.borderDefault ?? scheme.outline.withOpacity(0.7);
+
+    const minTableWidth = 1100.0;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final tableWidth = math.max(constraints.maxWidth, minTableWidth);
+
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minWidth: minTableWidth,
+              maxWidth: tableWidth,
+            ),
+            child: Column(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(16),
+                    ),
+                    color: extra?.surfaceSubtle ?? scheme.surface,
+                  ),
+                  child: Row(
+                    children: const [
+                      _AssetsHeaderCell(flex: 2, label: 'Інв. №'),
+                      _AssetsHeaderCell(flex: 2, label: 'Тип засобу'),
+                      _AssetsHeaderCell(flex: 2, label: 'Модель'),
+                      _AssetsHeaderCell(flex: 2, label: 'Підрозділ'),
+                      _AssetsHeaderCell(flex: 2, label: 'Статус'),
+                      _AssetsHeaderCell(flex: 2, label: 'Місцезнаходження'),
+                      _AssetsHeaderCell(flex: 2, label: 'Остання перевірка'),
+                      _AssetsHeaderCell(flex: 2, label: 'Дії'),
+                    ],
+                  ),
+                ),
+                Divider(height: 1, thickness: 1, color: dividerColor),
+                ListView.separated(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: assets.length,
+                  separatorBuilder: (_, __) =>
+                      Divider(height: 1, thickness: 1, color: dividerColor),
+                  itemBuilder: (context, index) {
+                    final a = assets[index];
+                    return _DesktopAssetRow(
+                      asset: a,
+                      onEdit: () => onEdit(a),
+                      onDelete: () => onDelete(a),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _AssetsHeaderCell extends StatelessWidget {
+  final int flex;
+  final String label;
+
+  const _AssetsHeaderCell({required this.flex, required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+
+    final color =
+        textTheme.bodySmall?.color ?? scheme.onSurface.withOpacity(0.7);
+
+    return Expanded(
+      flex: flex,
+      child: Text(
+        label,
+        overflow: TextOverflow.ellipsis,
+        style: textTheme.bodySmall?.copyWith(
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+          color: color,
+        ),
+      ),
+    );
+  }
+}
+
+class _DesktopAssetRow extends StatelessWidget {
+  final Asset asset;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  const _DesktopAssetRow({
+    required this.asset,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  Color _statusColor(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final extra = theme.extension<AppExtraColors>();
+
+    switch (asset.status) {
+      case 'У строю':
+        return extra?.success ?? scheme.primary;
+      case 'На ремонті':
+        return scheme.error;
+      case 'Резерв':
+        return extra?.warning ?? const Color(0xFFFFC107);
+      default:
+        return theme.textTheme.bodySmall?.color ??
+            scheme.onSurface.withOpacity(0.6);
+    }
   }
 
-  return DataRow(
-    cells: [
-      DataCell(Text(inv)),
-      DataCell(Text(type)),
-      DataCell(Text(model)),
-      DataCell(Text(unit)),
-      DataCell(
-        Row(
-          mainAxisSize: MainAxisSize.min,
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final textTheme = theme.textTheme;
+    final scheme = theme.colorScheme;
+
+    final statusColor = _statusColor(context);
+    final secondary =
+        textTheme.bodySmall?.color ?? scheme.onSurface.withOpacity(0.7);
+
+    return InkWell(
+      onTap: onEdit,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
           children: [
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                color: statusColor,
-                shape: BoxShape.circle,
+            Expanded(
+              flex: 2,
+              child: Text(
+                asset.invNumber,
+                style: textTheme.bodyMedium?.copyWith(
+                  fontSize: 13,
+                  color: scheme.onSurface,
+                ),
               ),
             ),
-            const SizedBox(width: 6),
-            Text(status, style: TextStyle(color: statusColor)),
+            Expanded(
+              flex: 2,
+              child: Text(
+                asset.type,
+                style: textTheme.bodySmall?.copyWith(
+                  fontSize: 13,
+                  color: secondary,
+                ),
+              ),
+            ),
+            Expanded(
+              flex: 2,
+              child: Text(
+                asset.model,
+                style: textTheme.bodySmall?.copyWith(
+                  fontSize: 13,
+                  color: secondary,
+                ),
+              ),
+            ),
+            Expanded(
+              flex: 2,
+              child: Text(
+                asset.unit,
+                style: textTheme.bodySmall?.copyWith(
+                  fontSize: 13,
+                  color: secondary,
+                ),
+              ),
+            ),
+            Expanded(
+              flex: 2,
+              child: Row(
+                children: [
+                  Container(
+                    width: 9,
+                    height: 9,
+                    decoration: BoxDecoration(
+                      color: statusColor,
+                      shape: BoxShape.circle,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      asset.status,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.bodyMedium?.copyWith(
+                        fontSize: 13,
+                        color: statusColor,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              flex: 2,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    asset.location,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: textTheme.bodySmall?.copyWith(
+                      fontSize: 13,
+                      color: secondary,
+                    ),
+                  ),
+                  if (asset.txPowerW != null || asset.frequencyMHz != null)
+                    Text(
+                      'P=${asset.txPowerW ?? '-'} Вт, f=${asset.frequencyMHz ?? '-'} МГц',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: textTheme.bodySmall?.copyWith(
+                        fontSize: 11,
+                        color: secondary.withOpacity(0.8),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Expanded(
+              flex: 2,
+              child: Text(
+                asset.lastCheck,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: textTheme.bodySmall?.copyWith(
+                  fontSize: 13,
+                  color: secondary,
+                ),
+              ),
+            ),
+            Expanded(
+              flex: 2,
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Wrap(
+                  spacing: 4,
+                  children: [
+                    IconButton(
+                      tooltip: 'Редагувати',
+                      icon: const Icon(Icons.edit, size: 18),
+                      onPressed: onEdit,
+                    ),
+                    IconButton(
+                      tooltip: 'Видалити',
+                      icon: const Icon(Icons.delete_outline, size: 18),
+                      onPressed: onDelete,
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
-      DataCell(Text(location)),
-      DataCell(Text(lastCheck)),
-    ],
-  );
+    );
+  }
+}
+
+//
+// ───────────────── МОБІЛЬНИЙ СПИСОК (КАРТКИ) ─────────────────
+//
+
+class _MobileAssetsList extends StatelessWidget {
+  final List<Asset> assets;
+  final ValueChanged<Asset> onEdit;
+  final ValueChanged<Asset> onDelete;
+
+  const _MobileAssetsList({
+    required this.assets,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 16),
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: assets.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      itemBuilder: (context, index) {
+        final a = assets[index];
+        return _MobileAssetCard(
+          asset: a,
+          onEdit: () => onEdit(a),
+          onDelete: () => onDelete(a),
+        );
+      },
+    );
+  }
+}
+
+class _MobileAssetCard extends StatelessWidget {
+  final Asset asset;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  const _MobileAssetCard({
+    required this.asset,
+    required this.onEdit,
+    required this.onDelete,
+  });
+
+  Color _statusColor(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final extra = theme.extension<AppExtraColors>();
+
+    switch (asset.status) {
+      case 'У строю':
+        return extra?.success ?? scheme.primary;
+      case 'На ремонті':
+        return scheme.error;
+      case 'Резерв':
+        return extra?.warning ?? const Color(0xFFFFC107);
+      default:
+        return theme.textTheme.bodySmall?.color ??
+            scheme.onSurface.withOpacity(0.6);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final extra = theme.extension<AppExtraColors>();
+    final textTheme = theme.textTheme;
+
+    final statusColor = _statusColor(context);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: extra?.surfaceElevated ?? scheme.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: extra?.borderDefault ?? scheme.outline.withOpacity(0.5),
+        ),
+      ),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Верхній рядок: Інв. № + статус
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  asset.invNumber,
+                  style: textTheme.titleMedium?.copyWith(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: statusColor.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: statusColor,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      asset.status,
+                      style: textTheme.bodySmall?.copyWith(
+                        color: statusColor,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 8),
+
+          Text(
+            '${asset.type} • ${asset.model}',
+            style: textTheme.bodyMedium?.copyWith(
+              color:
+                  textTheme.bodySmall?.color ??
+                  scheme.onSurface.withOpacity(0.7),
+            ),
+          ),
+
+          const SizedBox(height: 4),
+
+          Text(
+            'Підрозділ: ${asset.unit}',
+            style: textTheme.bodySmall?.copyWith(
+              color:
+                  textTheme.bodySmall?.color ??
+                  scheme.onSurface.withOpacity(0.7),
+            ),
+          ),
+          Text(
+            'Місцезнаходження: ${asset.location}',
+            style: textTheme.bodySmall?.copyWith(
+              color:
+                  textTheme.bodySmall?.color ??
+                  scheme.onSurface.withOpacity(0.7),
+            ),
+          ),
+          Text(
+            'Остання перевірка: ${asset.lastCheck}',
+            style: textTheme.bodySmall?.copyWith(
+              color:
+                  textTheme.bodySmall?.color ??
+                  scheme.onSurface.withOpacity(0.7),
+            ),
+          ),
+
+          if (asset.txPowerW != null ||
+              asset.frequencyMHz != null ||
+              asset.antennaHeightM != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'P=${asset.txPowerW ?? '-'} Вт, f=${asset.frequencyMHz ?? '-'} МГц, h=${asset.antennaHeightM ?? '-'} м',
+                style: textTheme.bodySmall?.copyWith(
+                  color:
+                      textTheme.bodySmall?.color ??
+                      scheme.onSurface.withOpacity(0.7),
+                ),
+              ),
+            ),
+
+          const SizedBox(height: 8),
+
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              TextButton.icon(
+                onPressed: onEdit,
+                icon: const Icon(Icons.edit, size: 16),
+                label: const Text('Редагувати'),
+              ),
+              const SizedBox(width: 4),
+              TextButton.icon(
+                onPressed: onDelete,
+                icon: const Icon(Icons.delete_outline, size: 16),
+                label: const Text('Видалити'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }

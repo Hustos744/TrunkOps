@@ -31,7 +31,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     return Scaffold(
       resizeToAvoidBottomInset: false,
-      backgroundColor: colorScheme.background,
+      backgroundColor: colorScheme.surface,
       body: SafeArea(
         top: true,
         bottom: false,
@@ -110,7 +110,7 @@ class _LoginScreenState extends State<LoginScreen> {
             Expanded(
               flex: 6,
               child: Container(
-                color: colorScheme.background,
+                color: colorScheme.surface,
                 child: Center(
                   child: SingleChildScrollView(
                     padding: EdgeInsets.only(

@@ -4,6 +4,10 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:trunk_ops_app/models/coverage_models.dart';
 
+/// Сервіс для виклику бекенду розрахунку покриття.
+/// Зараз основний розрахунок ти вже реалізував на фронті (Hata-розрахунок у
+/// coverage_page.dart), але цей клас може знадобитися, якщо захочеш винести
+/// обчислення на сервер.
 class CoverageApiService {
   /// Базовий URL бекенду.
   /// Якщо не передати вручну, вибираємо автоматично:
@@ -24,6 +28,10 @@ class CoverageApiService {
     }
   }
 
+  /// Виклик бекенду для розрахунку покриття.
+  ///
+  /// Використовує типи з coverage_models.dart:
+  /// [CoverageRequest] → [CoverageResponse].
   Future<CoverageResponse> calculateCoverage(CoverageRequest req) async {
     final url = Uri.parse('$baseUrl/coverage/calc');
 
