@@ -507,7 +507,7 @@ class _UnitsPageState extends State<UnitsPage> {
                       child: _UnitStatCard(
                         title: 'Загальна кількість підрозділів',
                         value: '$_totalUnits',
-                        subtitle: 'по обраному ОТУ (локальні дані)',
+                        subtitle: '',
                       ),
                     ),
                     SizedBox(

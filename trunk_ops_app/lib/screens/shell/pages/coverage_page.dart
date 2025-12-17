@@ -20,9 +20,7 @@ class _CoveragePageState extends State<CoveragePage> {
   CoverageResponse? _coverage;
 
   void _handleCoverageChanged(CoverageResponse? resp) {
-    setState(() {
-      _coverage = resp;
-    });
+    setState(() => _coverage = resp);
   }
 
   @override
@@ -36,69 +34,75 @@ class _CoveragePageState extends State<CoveragePage> {
         final maxWidth = constraints.maxWidth;
         final bool isWide = maxWidth >= 1100;
 
-        return SingleChildScrollView(
-          padding: EdgeInsets.symmetric(
-            horizontal: maxWidth < 600 ? 12 : 24,
-            vertical: 24,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Заголовок
-              Text(
-                'Мапа покриття',
-                style: textTheme.headlineLarge?.copyWith(
-                  fontSize: maxWidth < 600 ? 22 : 26,
-                  fontWeight: FontWeight.w600,
-                  color: colorScheme.onSurface,
-                ),
+        return CustomScrollView(
+          slivers: [
+            SliverPadding(
+              padding: EdgeInsets.symmetric(
+                horizontal: maxWidth < 600 ? 12 : 24,
+                vertical: 24,
               ),
-              const SizedBox(height: 4),
-              Text(
-                'Візуалізація зони дії транкінгової мережі та взаємодії між вузлами',
-                style: textTheme.bodyMedium?.copyWith(
-                  fontSize: maxWidth < 600 ? 13 : 14,
-                  color:
-                      textTheme.bodySmall?.color ??
-                      colorScheme.onSurface.withOpacity(0.7),
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // Верхня панель фільтрів (формальна)
-              const SizedBox(height: 12),
-
-              // Основний контент
-              if (isWide)
-                Row(
+              sliver: SliverToBoxAdapter(
+                child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      flex: 3,
-                      child: _CoverageMapCard(
-                        onCoverageChanged: _handleCoverageChanged,
+                    Text(
+                      'Мапа покриття',
+                      style: textTheme.headlineLarge?.copyWith(
+                        fontSize: maxWidth < 600 ? 22 : 26,
+                        fontWeight: FontWeight.w600,
+                        color: colorScheme.onSurface,
                       ),
                     ),
-                    const SizedBox(width: 20),
-                    Expanded(
-                      flex: 2,
-                      child: _SideStatusPanel(coverage: _coverage),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Візуалізація зони дії транкінгової мережі та взаємодії між вузлами',
+                      style: textTheme.bodyMedium?.copyWith(
+                        fontSize: maxWidth < 600 ? 13 : 14,
+                        color:
+                            textTheme.bodySmall?.color ??
+                            colorScheme.onSurface.withOpacity(0.7),
+                      ),
                     ),
-                  ],
-                )
-              else
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _CoverageMapCard(onCoverageChanged: _handleCoverageChanged),
+                    const SizedBox(height: 20),
+
+                    if (isWide)
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            flex: 3,
+                            child: _CoverageMapCard(
+                              onCoverageChanged: _handleCoverageChanged,
+                            ),
+                          ),
+                          const SizedBox(width: 20),
+                          Expanded(
+                            flex: 2,
+                            child: _SideStatusPanel(coverage: _coverage),
+                          ),
+                        ],
+                      )
+                    else
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _CoverageMapCard(
+                            onCoverageChanged: _handleCoverageChanged,
+                          ),
+                          const SizedBox(height: 16),
+                          _SideStatusPanel(coverage: _coverage),
+                        ],
+                      ),
+
                     const SizedBox(height: 16),
-                    _SideStatusPanel(coverage: _coverage),
+                    const _TrunkingChannelCalcCard(),
+
+                    const SizedBox(height: 24),
                   ],
                 ),
-
-              const SizedBox(height: 24),
-            ],
-          ),
+              ),
+            ),
+          ],
         );
       },
     );
@@ -122,13 +126,8 @@ class _Station {
     this.lon,
   });
 
-  /// Потужність передавача в dBm, обчислена з Вт.
-  /// P[dBm] = 10 * log10(P[mW]), P[mW] = P[Вт] * 1000.
   double get txPowerDbm {
-    if (asset.txPowerW == null) {
-      // дефолт ~20 Вт ≈ 43 дБм
-      return 43;
-    }
+    if (asset.txPowerW == null) return 43; // ~20W
     return 10 * log(asset.txPowerW! * 1000) / ln10;
   }
 
@@ -143,7 +142,6 @@ enum PropagationModel { hata, freeSpace }
 
 enum EnvironmentType { urban, suburban, ruralOpen }
 
-/// Режим візуалізації: класифіковані зони або heatmap.
 enum CoverageViewMode { zones, heatmap }
 
 /// ───────────────────── КАРТКА З МАПОЮ ПОКРИТТЯ ─────────────────────
@@ -161,7 +159,6 @@ class _CoverageMapCardState extends State<_CoverageMapCard> {
   final AssetLocalRepository _assetRepo = AssetLocalRepository();
   final Distance _distance = const Distance();
 
-  // Параметри розрахунку
   final TextEditingController _centerLatController = TextEditingController(
     text: '50.4501',
   );
@@ -194,15 +191,12 @@ class _CoverageMapCardState extends State<_CoverageMapCard> {
   List<_Station> _stations = [];
   int _selectedStationIndex = 0;
 
-  // Модель поширення та тип середовища
   PropagationModel _model = PropagationModel.hata;
   EnvironmentType _envType = EnvironmentType.urban;
 
-  // Додаткові налаштування
-  bool _useAllStations = false; // комбіноване покриття
-  bool _showTheoreticalContours = true; // аналітичні контури
+  bool _useAllStations = false;
+  bool _showTheoreticalContours = true;
 
-  // Нове: режим візуалізації (зони / heatmap)
   CoverageViewMode _viewMode = CoverageViewMode.zones;
 
   _Station get _selectedStation => _stations[_selectedStationIndex];
@@ -231,21 +225,16 @@ class _CoverageMapCardState extends State<_CoverageMapCard> {
     super.dispose();
   }
 
-  // ───────────── ЗАВАНТАЖЕННЯ СТАНЦІЙ З БД ─────────────
-
   Future<void> _loadStations() async {
     final assets = await _assetRepo.getAll();
-
     if (!mounted) return;
 
     setState(() {
-      // Беремо всі assets, дефолти підставляються у _Station.
       _stations = List.generate(assets.length, (index) {
         final a = assets[index];
         final label =
             '${a.unit} • ${(a.model.isNotEmpty ? a.model : a.type)} (${a.invNumber})';
         final baseColor = Colors.primaries[index % Colors.primaries.length];
-
         return _Station(asset: a, label: label, color: baseColor.shade400);
       });
 
@@ -258,15 +247,11 @@ class _CoverageMapCardState extends State<_CoverageMapCard> {
     });
   }
 
-  // ───────────── ПІДСТАНОВКА ПАРАМЕТРІВ СТАНЦІЇ ─────────────
-
   void _applyStationParams(_Station st) {
     _frequencyController.text = st.frequencyMHz.toStringAsFixed(1);
     _bsHeightController.text = st.antennaHeightM.toStringAsFixed(1);
     _txPowerController.text = st.txPowerDbm.toStringAsFixed(1);
   }
-
-  // ───────────── ЗБЕРЕЖЕННЯ / ВІДНОВЛЕННЯ СТАНУ ─────────────
 
   Future<void> _loadPersistedState() async {
     final prefs = await SharedPreferences.getInstance();
@@ -298,17 +283,13 @@ class _CoverageMapCardState extends State<_CoverageMapCard> {
       }
 
       final modelStr = prefs.getString('cov_model');
-      if (modelStr != null) {
-        if (modelStr == 'hata') _model = PropagationModel.hata;
-        if (modelStr == 'freeSpace') _model = PropagationModel.freeSpace;
-      }
+      if (modelStr == 'hata') _model = PropagationModel.hata;
+      if (modelStr == 'freeSpace') _model = PropagationModel.freeSpace;
 
       final envStr = prefs.getString('cov_env');
-      if (envStr != null) {
-        if (envStr == 'urban') _envType = EnvironmentType.urban;
-        if (envStr == 'suburban') _envType = EnvironmentType.suburban;
-        if (envStr == 'ruralOpen') _envType = EnvironmentType.ruralOpen;
-      }
+      if (envStr == 'urban') _envType = EnvironmentType.urban;
+      if (envStr == 'suburban') _envType = EnvironmentType.suburban;
+      if (envStr == 'ruralOpen') _envType = EnvironmentType.ruralOpen;
 
       _useAllStations =
           prefs.getBool('cov_use_all_stations') ?? _useAllStations;
@@ -316,10 +297,8 @@ class _CoverageMapCardState extends State<_CoverageMapCard> {
           prefs.getBool('cov_show_contours') ?? _showTheoreticalContours;
 
       final viewStr = prefs.getString('cov_view_mode');
-      if (viewStr != null) {
-        if (viewStr == 'zones') _viewMode = CoverageViewMode.zones;
-        if (viewStr == 'heatmap') _viewMode = CoverageViewMode.heatmap;
-      }
+      if (viewStr == 'zones') _viewMode = CoverageViewMode.zones;
+      if (viewStr == 'heatmap') _viewMode = CoverageViewMode.heatmap;
 
       for (final st in _stations) {
         final lat = prefs.getDouble('cov_station_${st.asset.id}_lat');
@@ -373,15 +352,11 @@ class _CoverageMapCardState extends State<_CoverageMapCard> {
     }
   }
 
-  // ───────────── МАТЕМАТИЧНА МОДЕЛЬ (Hata / COST-231 / Free-space) ─────────────
-
-  // Корекція для міста (urban)
   double _mobileCorrectionUrban(double freqMhz, double hm) {
     final logF = log(freqMhz) / ln10;
     return (1.1 * logF - 0.7) * hm - (1.56 * logF - 0.8);
   }
 
-  /// Узагальнена модель Hata з урахуванням типу місцевості.
   double _hataPathLoss({
     required double freqMhz,
     required double distanceKm,
@@ -396,7 +371,6 @@ class _CoverageMapCardState extends State<_CoverageMapCard> {
 
     final aHmUrban = _mobileCorrectionUrban(freqMhz, hm);
 
-    // Базовий urban Hata (150–1500 МГц)
     double lossUrban =
         69.55 +
         26.16 * logF -
@@ -406,23 +380,17 @@ class _CoverageMapCardState extends State<_CoverageMapCard> {
 
     switch (envType) {
       case EnvironmentType.urban:
-        // +3 дБ як поправка на щільну забудову (аналог COST-231)
         return lossUrban + 3.0;
-
       case EnvironmentType.suburban:
-        // Рекомендована поправка для передмістя
         final term = log(freqMhz / 28.0) / ln10;
         final correction = -2 * term * term - 5.4;
         return lossUrban + correction;
-
       case EnvironmentType.ruralOpen:
-        // Відкрита / сільська місцевість
         final correction = -4.78 * logF * logF + 18.33 * logF - 40.94;
         return lossUrban + correction;
     }
   }
 
-  /// Вільний простір (free-space) у дБ: 32.45 + 20log10(f_MHz) + 20log10(d_km).
   double _freeSpacePathLoss({
     required double freqMhz,
     required double distanceKm,
@@ -433,7 +401,6 @@ class _CoverageMapCardState extends State<_CoverageMapCard> {
     return 32.45 + 20 * logF + 20 * logD;
   }
 
-  /// Єдиний вхід: повертає втрати залежно від обраної моделі.
   double _pathLoss({
     required double freqMhz,
     required double distanceKm,
@@ -454,7 +421,6 @@ class _CoverageMapCardState extends State<_CoverageMapCard> {
     }
   }
 
-  /// Чисельний розвʼязок для відстані до ізолінії P_rx = threshold.
   double _solveDistanceForRxThreshold({
     required double freqMhz,
     required double hb,
@@ -500,8 +466,6 @@ class _CoverageMapCardState extends State<_CoverageMapCard> {
     return points;
   }
 
-  // ───────────── ЛОКАЛЬНИЙ РОЗРАХУНОК ПОКРИТТЯ ─────────────
-
   Future<void> _calculateCoverage(BuildContext context) async {
     if (_stations.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -524,7 +488,6 @@ class _CoverageMapCardState extends State<_CoverageMapCard> {
       final rxHeightM = double.parse(_rxHeightController.text.trim());
 
       final active = _selectedStation;
-      final freqMhzActive = active.frequencyMHz;
       final hbActive = active.antennaHeightM;
 
       final txPowerDbmParsed = _txPowerController.text.trim();
@@ -542,17 +505,13 @@ class _CoverageMapCardState extends State<_CoverageMapCard> {
 
       final center = LatLng(centerLat, centerLon);
       final radiusM = radiusKm * 1000.0;
-      final step = max(
-        stepM,
-        50.0,
-      ); // не надто густо, щоб не вбити продуктивність
+      final step = max(stepM, 50.0);
 
       final cells = <CoverageCell>[];
 
       final latRad = centerLat * pi / 180.0;
       final cosLat = cos(latRad);
 
-      // Список станцій, які беремо в розрахунок
       final stationsForCalc = _useAllStations
           ? _stations.where((s) => s.lat != null && s.lon != null).toList()
           : <_Station>[active];
@@ -575,7 +534,6 @@ class _CoverageMapCardState extends State<_CoverageMapCard> {
           final r = sqrt(dx * dx + dy * dy);
           if (r > radiusM) continue;
 
-          // Перехід із локальних координат (x,y в метрах) до географічних
           final dLatDeg = dy / 111320.0;
           final dLonDeg = dx / (111320.0 * max(cosLat, 0.1));
           final lat = centerLat + dLatDeg;
@@ -596,7 +554,7 @@ class _CoverageMapCardState extends State<_CoverageMapCard> {
               0.01,
             );
 
-            final freqMhz = _useAllStations ? st.frequencyMHz : freqMhzActive;
+            final freqMhz = st.frequencyMHz;
             final hb = _useAllStations ? st.antennaHeightM : hbActive;
             final txDbm = _useAllStations ? st.txPowerDbm : txPowerDbmActive;
             final gTx = _useAllStations ? st.antennaGainDb : gTxActive;
@@ -609,9 +567,7 @@ class _CoverageMapCardState extends State<_CoverageMapCard> {
             );
 
             final rxDbm = txDbm + gTx + gRx - loss;
-            if (rxDbm > bestRx) {
-              bestRx = rxDbm;
-            }
+            if (rxDbm > bestRx) bestRx = rxDbm;
           }
 
           cells.add(CoverageCell(lat: lat, lon: lon, rxLevelDbm: bestRx));
@@ -621,9 +577,7 @@ class _CoverageMapCardState extends State<_CoverageMapCard> {
       final resp = CoverageResponse(gridStepM: step, cells: cells);
 
       if (!mounted) return;
-      setState(() {
-        _coverage = resp;
-      });
+      setState(() => _coverage = resp);
 
       widget.onCoverageChanged(resp);
       await _persistState();
@@ -633,34 +587,23 @@ class _CoverageMapCardState extends State<_CoverageMapCard> {
         context,
       ).showSnackBar(SnackBar(content: Text('Помилка розрахунку: $e')));
     } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  /// Класичне зональне забарвлення (як було раніше).
   Color _classifiedColorForRx(double rxDbm) {
-    if (rxDbm >= -80) {
-      return Colors.green.withOpacity(0.8);
-    } else if (rxDbm >= -95) {
-      return Colors.yellow.withOpacity(0.8);
-    } else if (rxDbm >= -110) {
-      return Colors.orange.withOpacity(0.8);
-    } else {
-      return Colors.red.withOpacity(0.3);
-    }
+    if (rxDbm >= -80) return Colors.green.withOpacity(0.8);
+    if (rxDbm >= -95) return Colors.yellow.withOpacity(0.8);
+    if (rxDbm >= -110) return Colors.orange.withOpacity(0.8);
+    return Colors.red.withOpacity(0.3);
   }
 
-  /// Нове: кольори для heatmap (градієнт від червоного до зеленого).
   Color _heatmapColorForRx(double rxDbm) {
-    // Нормуємо рівень сигналу до [0;1] у діапазоні [-110; -70] dBm.
     const minDbm = -110.0;
     const maxDbm = -70.0;
     double t = (rxDbm - minDbm) / (maxDbm - minDbm);
     t = t.clamp(0.0, 1.0);
 
-    // 0 -> червоний (0°), 1 -> зелений (120°).
     final hue = 0.0 + 120.0 * t;
     final hsv = HSVColor.fromAHSV(0.75, hue, 1.0, 1.0);
     return hsv.toColor();
@@ -700,7 +643,6 @@ class _CoverageMapCardState extends State<_CoverageMapCard> {
       );
     }
 
-    // Маркери станцій (якщо вони є)
     final markers = <Marker>[];
     for (final station in _stations) {
       if (station.lat != null && station.lon != null) {
@@ -737,7 +679,6 @@ class _CoverageMapCardState extends State<_CoverageMapCard> {
       }
     }
 
-    // Лінії між станціями
     final polylines = <Polyline>[];
     if (_stations.length >= 2) {
       for (var i = 0; i < _stations.length; i++) {
@@ -764,7 +705,6 @@ class _CoverageMapCardState extends State<_CoverageMapCard> {
       }
     }
 
-    // Аналітичні контури покриття від активної станції
     final polygons = <Polygon>[];
     final active = _stations.isNotEmpty ? _selectedStation : null;
     if (_showTheoreticalContours &&
@@ -848,498 +788,449 @@ class _CoverageMapCardState extends State<_CoverageMapCard> {
       );
     }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: extra?.borderDefault ?? colorScheme.outline.withOpacity(0.6),
-          width: 1,
-        ),
-      ),
-      padding: EdgeInsets.all(compact ? 12 : 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Верхній опис
-          Text(
-            'Оперативна обстановка',
-            style: theme.textTheme.bodySmall?.copyWith(
-              fontSize: compact ? 13 : 14,
-              color: mutedText,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Інтерактивна мапа покриття та взаємодії між станціями',
-            style: theme.textTheme.bodyMedium?.copyWith(
-              fontSize: compact ? 15 : 16,
-              fontWeight: FontWeight.w500,
-              color: colorScheme.onSurface,
-            ),
-          ),
-          const SizedBox(height: 12),
+    return LayoutBuilder(
+      builder: (context, cardConstraints) {
+        // ✅ Ключовий фікс overflow:
+        // якщо карта вставлена у зону з обмеженою висотою (Row/Expanded),
+        // весь контент картки стає внутрішньо-скрольним.
+        final hasTightHeight = cardConstraints.maxHeight.isFinite;
+        final innerScrollPhysics = hasTightHeight
+            ? const BouncingScrollPhysics()
+            : const NeverScrollableScrollPhysics();
 
-          // Блок вибору активної станції — завжди видимий, якщо є станції
-          if (_stations.isNotEmpty)
-            Column(
+        final mapHeight = compact ? 320.0 : 420.0;
+
+        return Container(
+          decoration: BoxDecoration(
+            color: colorScheme.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color:
+                  extra?.borderDefault ?? colorScheme.outline.withOpacity(0.6),
+              width: 1,
+            ),
+          ),
+          padding: EdgeInsets.all(compact ? 12 : 16),
+          child: SingleChildScrollView(
+            physics: innerScrollPhysics,
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'Активна станція',
+                  'Оперативна обстановка',
                   style: theme.textTheme.bodySmall?.copyWith(
-                    fontSize: 12,
+                    fontSize: compact ? 13 : 14,
                     color: mutedText,
                   ),
                 ),
                 const SizedBox(height: 4),
-                DropdownButtonFormField<int>(
-                  value: _selectedStationIndex,
-                  isExpanded: true,
-                  decoration: const InputDecoration(
-                    isDense: true,
-                    border: OutlineInputBorder(),
-                    contentPadding: EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 10,
-                    ),
+                Text(
+                  'Інтерактивна мапа покриття та взаємодії між станціями',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    fontSize: compact ? 15 : 16,
+                    fontWeight: FontWeight.w600,
+                    color: colorScheme.onSurface,
                   ),
-                  items: List.generate(_stations.length, (index) {
-                    final st = _stations[index];
-                    return DropdownMenuItem(
-                      value: index,
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 10,
-                            height: 10,
-                            decoration: BoxDecoration(
-                              color: st.color,
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              st.label,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }),
-                  onChanged: (value) async {
-                    if (value == null) return;
-                    setState(() {
-                      _selectedStationIndex = value;
-                      final st = _selectedStation;
-                      _applyStationParams(st);
-                      if (st.lat != null && st.lon != null) {
-                        _centerLatController.text = st.lat!.toStringAsFixed(6);
-                        _centerLonController.text = st.lon!.toStringAsFixed(6);
-                      }
-                    });
-                    await _persistState();
-                  },
                 ),
-                const SizedBox(height: 6),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Switch(
-                      value: _useAllStations,
-                      onChanged: (val) async {
-                        setState(() => _useAllStations = val);
-                        await _persistState();
-                      },
-                    ),
-                    Flexible(
-                      child: Text(
-                        'Усі станції (комбіноване покриття)',
+                const SizedBox(height: 12),
+
+                if (_stations.isNotEmpty)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Активна станція',
                         style: theme.textTheme.bodySmall?.copyWith(
                           fontSize: 12,
                           color: mutedText,
                         ),
                       ),
+                      const SizedBox(height: 4),
+                      DropdownButtonFormField<int>(
+                        value: _selectedStationIndex,
+                        isExpanded: true,
+                        decoration: const InputDecoration(
+                          isDense: true,
+                          border: OutlineInputBorder(),
+                          contentPadding: EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 10,
+                          ),
+                        ),
+                        items: List.generate(_stations.length, (index) {
+                          final st = _stations[index];
+                          return DropdownMenuItem(
+                            value: index,
+                            child: Row(
+                              children: [
+                                Container(
+                                  width: 10,
+                                  height: 10,
+                                  decoration: BoxDecoration(
+                                    color: st.color,
+                                    borderRadius: BorderRadius.circular(999),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    st.label,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                        onChanged: (value) async {
+                          if (value == null) return;
+                          setState(() {
+                            _selectedStationIndex = value;
+                            final st = _selectedStation;
+                            _applyStationParams(st);
+                            if (st.lat != null && st.lon != null) {
+                              _centerLatController.text = st.lat!
+                                  .toStringAsFixed(6);
+                              _centerLonController.text = st.lon!
+                                  .toStringAsFixed(6);
+                            }
+                          });
+                          await _persistState();
+                        },
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Switch(
+                            value: _useAllStations,
+                            onChanged: (val) async {
+                              setState(() => _useAllStations = val);
+                              await _persistState();
+                            },
+                          ),
+                          Flexible(
+                            child: Text(
+                              'Усі станції (комбіноване покриття)',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                fontSize: 12,
+                                color: mutedText,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                  )
+                else
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8.0),
+                    child: Text(
+                      'Немає засобів у локальній базі. Додайте хоча б один засіб у розділі «Засоби».',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontSize: 12,
+                        color: mutedText,
+                      ),
+                    ),
+                  ),
+
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    _SmallNumberField(
+                      label: 'Lat',
+                      controller: _centerLatController,
+                    ),
+                    _SmallNumberField(
+                      label: 'Lon',
+                      controller: _centerLonController,
+                    ),
+                    _SmallNumberField(
+                      label: 'Радіус, км',
+                      controller: _radiusKmController,
+                    ),
+                    _SmallNumberField(
+                      label: 'Крок, м',
+                      controller: _stepMController,
+                    ),
+                    _SmallNumberField(
+                      label: 'Частота, МГц',
+                      controller: _frequencyController,
+                    ),
+                    _SmallNumberField(
+                      label: 'H БС, м',
+                      controller: _bsHeightController,
+                    ),
+                    _SmallNumberField(
+                      label: 'Tx, dBm',
+                      controller: _txPowerController,
+                    ),
+                    _SmallNumberField(
+                      label: 'H Rx, м',
+                      controller: _rxHeightController,
+                    ),
+
+                    DropdownButton<PropagationModel>(
+                      value: _model,
+                      onChanged: (value) async {
+                        if (value == null) return;
+                        setState(() => _model = value);
+                        await _persistState();
+                      },
+                      items: const [
+                        DropdownMenuItem(
+                          value: PropagationModel.hata,
+                          child: Text('Hata'),
+                        ),
+                        DropdownMenuItem(
+                          value: PropagationModel.freeSpace,
+                          child: Text('Free-space'),
+                        ),
+                      ],
+                    ),
+
+                    DropdownButton<EnvironmentType>(
+                      value: _envType,
+                      onChanged: (value) async {
+                        if (value == null) return;
+                        setState(() => _envType = value);
+                        await _persistState();
+                      },
+                      items: const [
+                        DropdownMenuItem(
+                          value: EnvironmentType.urban,
+                          child: Text('Місто'),
+                        ),
+                        DropdownMenuItem(
+                          value: EnvironmentType.suburban,
+                          child: Text('Приміське'),
+                        ),
+                        DropdownMenuItem(
+                          value: EnvironmentType.ruralOpen,
+                          child: Text('Відкрите'),
+                        ),
+                      ],
+                    ),
+
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Checkbox(
+                          value: _showTheoreticalContours,
+                          onChanged: (val) async {
+                            if (val == null) return;
+                            setState(() => _showTheoreticalContours = val);
+                            await _persistState();
+                          },
+                        ),
+                        Text(
+                          'Аналітичні контури',
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            fontSize: 12,
+                            color: mutedText,
+                          ),
+                        ),
+                      ],
+                    ),
+
+                    ElevatedButton.icon(
+                      onPressed: _isLoading
+                          ? null
+                          : () => _calculateCoverage(context),
+                      icon: _isLoading
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.analytics_outlined, size: 18),
+                      label: const Text('Розрахувати'),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-              ],
-            )
-          else
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8.0),
-              child: Text(
-                'Немає засобів у локальній базі. Додайте хоча б один засіб у розділі «Засоби», '
-                'щоб мати змогу привʼязати його до мапи.',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontSize: 12,
-                  color: mutedText,
+
+                const SizedBox(height: 12),
+
+                Row(
+                  children: [
+                    Text(
+                      'Режим візуалізації:',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        fontSize: 12,
+                        color: mutedText,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ChoiceChip(
+                      label: const Text('Зони покриття'),
+                      selected: _viewMode == CoverageViewMode.zones,
+                      onSelected: (sel) async {
+                        if (!sel) return;
+                        setState(() => _viewMode = CoverageViewMode.zones);
+                        await _persistState();
+                      },
+                    ),
+                    const SizedBox(width: 8),
+                    ChoiceChip(
+                      label: const Text('Heatmap сигналу'),
+                      selected: _viewMode == CoverageViewMode.heatmap,
+                      onSelected: (sel) async {
+                        if (!sel) return;
+                        setState(() => _viewMode = CoverageViewMode.heatmap);
+                        await _persistState();
+                      },
+                    ),
+                  ],
                 ),
-              ),
-            ),
 
-          // Панель параметрів
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              _SmallNumberField(label: 'Lat', controller: _centerLatController),
-              _SmallNumberField(label: 'Lon', controller: _centerLonController),
-              _SmallNumberField(
-                label: 'Радіус, км',
-                controller: _radiusKmController,
-              ),
-              _SmallNumberField(label: 'Крок, м', controller: _stepMController),
-              _SmallNumberField(
-                label: 'Частота, МГц',
-                controller: _frequencyController,
-              ),
-              _SmallNumberField(
-                label: 'H БС, м',
-                controller: _bsHeightController,
-              ),
-              _SmallNumberField(
-                label: 'Tx, dBm',
-                controller: _txPowerController,
-              ),
-              _SmallNumberField(
-                label: 'H Rx, м',
-                controller: _rxHeightController,
-              ),
+                const SizedBox(height: 12),
 
-              // Вибір моделі поширення
-              DropdownButton<PropagationModel>(
-                value: _model,
-                onChanged: (value) async {
-                  if (value == null) return;
-                  setState(() => _model = value);
-                  await _persistState();
-                },
-                items: const [
-                  DropdownMenuItem(
-                    value: PropagationModel.hata,
-                    child: Text('Hata'),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
                   ),
-                  DropdownMenuItem(
-                    value: PropagationModel.freeSpace,
-                    child: Text('Free-space'),
-                  ),
-                ],
-              ),
-
-              // Вибір типу середовища
-              DropdownButton<EnvironmentType>(
-                value: _envType,
-                onChanged: (value) async {
-                  if (value == null) return;
-                  setState(() => _envType = value);
-                  await _persistState();
-                },
-                items: const [
-                  DropdownMenuItem(
-                    value: EnvironmentType.urban,
-                    child: Text('Місто'),
-                  ),
-                  DropdownMenuItem(
-                    value: EnvironmentType.suburban,
-                    child: Text('Приміське'),
-                  ),
-                  DropdownMenuItem(
-                    value: EnvironmentType.ruralOpen,
-                    child: Text('Відкрите'),
-                  ),
-                ],
-              ),
-
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Checkbox(
-                    value: _showTheoreticalContours,
-                    onChanged: (val) async {
-                      if (val == null) return;
-                      setState(() => _showTheoreticalContours = val);
-                      await _persistState();
-                    },
-                  ),
-                  Text(
-                    'Аналітичні контури',
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      fontSize: 12,
-                      color: mutedText,
+                  decoration: BoxDecoration(
+                    color: colorScheme.surface.withOpacity(0.9),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color:
+                          extra?.borderDefault ??
+                          colorScheme.outline.withOpacity(0.6),
+                      width: 1,
                     ),
                   ),
-                ],
-              ),
-
-              ElevatedButton.icon(
-                onPressed: (_isLoading)
-                    ? null
-                    : () => _calculateCoverage(context),
-                icon: _isLoading
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.analytics_outlined, size: 18),
-                label: const Text('Розрахувати'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-
-          // Перемикач режиму візуалізації
-          Row(
-            children: [
-              Text(
-                'Режим візуалізації:',
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontSize: 12,
-                  color: mutedText,
-                ),
-              ),
-              const SizedBox(width: 8),
-              ChoiceChip(
-                label: const Text('Зони покриття'),
-                selected: _viewMode == CoverageViewMode.zones,
-                onSelected: (sel) async {
-                  if (!sel) return;
-                  setState(() => _viewMode = CoverageViewMode.zones);
-                  await _persistState();
-                },
-              ),
-              const SizedBox(width: 8),
-              ChoiceChip(
-                label: const Text('Heatmap сигналу'),
-                selected: _viewMode == CoverageViewMode.heatmap,
-                onSelected: (sel) async {
-                  if (!sel) return;
-                  setState(() => _viewMode = CoverageViewMode.heatmap);
-                  await _persistState();
-                },
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-
-          // Легенда
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: colorScheme.surface.withOpacity(0.9),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color:
-                    extra?.borderDefault ??
-                    colorScheme.outline.withOpacity(0.6),
-                width: 1,
-              ),
-            ),
-            child: _viewMode == CoverageViewMode.zones
-                ? const Wrap(
-                    spacing: 12,
-                    runSpacing: 4,
-                    crossAxisAlignment: WrapCrossAlignment.center,
-                    children: [
-                      _LegendDot(
-                        color: Colors.green,
-                        label: 'Стабільна зона (rx ≥ -80 dBm)',
-                      ),
-                      _LegendDot(
-                        color: Colors.yellow,
-                        label: 'Погіршене покриття',
-                      ),
-                      _LegendDot(
-                        color: Colors.orange,
-                        label: 'Граничне покриття',
-                      ),
-                      _LegendDot(color: Colors.red, label: 'Нижче порога'),
-                    ],
-                  )
-                : Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 80,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(999),
-                          gradient: const LinearGradient(
-                            begin: Alignment.centerLeft,
-                            end: Alignment.centerRight,
-                            colors: [
-                              Colors.red,
-                              Colors.orange,
-                              Colors.yellow,
-                              Colors.green,
-                            ],
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        'Heatmap рівня сигналу (від слабкого до сильного)',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          fontSize: 11,
-                          color: mutedText,
-                        ),
-                      ),
-                    ],
-                  ),
-          ),
-          const SizedBox(height: 8),
-
-          // Маленький "науковий" опис моделі
-          Text(
-            'Модель: узагальнена модель Хата з поправкою на середовище. '
-            'L(d) = 69.55 + 26.16·log₁₀(f) − 13.82·log₁₀(hb) − a(hm) '
-            '+ (44.9 − 6.55·log₁₀(hb))·log₁₀(d) + C_env.',
-            style: theme.textTheme.bodySmall?.copyWith(
-              fontSize: 11,
-              color: mutedText,
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // Мапа
-          SizedBox(
-            height: compact ? 300 : 380,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(12),
-              child: FlutterMap(
-                options: MapOptions(
-                  initialCenter: LatLng(centerLat, centerLon),
-                  initialZoom: 11,
-                  onTap: (tapPos, latLng) async {
-                    setState(() {
-                      _centerLatController.text = latLng.latitude
-                          .toStringAsFixed(6);
-                      _centerLonController.text = latLng.longitude
-                          .toStringAsFixed(6);
-                      if (_stations.isNotEmpty) {
-                        _selectedStation.lat = latLng.latitude;
-                        _selectedStation.lon = latLng.longitude;
-                      }
-                    });
-                    await _persistState();
-
-                    if (_stations.isNotEmpty) {
-                      final st = _selectedStation;
-                      if (st.lat != null && st.lon != null) {
-                        final distKm = _distance.as(
-                          LengthUnit.Kilometer,
-                          LatLng(st.lat!, st.lon!),
-                          latLng,
-                        );
-
-                        final rxHeightM =
-                            double.tryParse(_rxHeightController.text.trim()) ??
-                            1.5;
-                        final txPowerDbmParsed = _txPowerController.text.trim();
-                        final txPowerDbm =
-                            double.tryParse(
-                              txPowerDbmParsed.isEmpty
-                                  ? st.txPowerDbm.toString()
-                                  : txPowerDbmParsed,
-                            ) ??
-                            st.txPowerDbm;
-
-                        final loss = _pathLoss(
-                          freqMhz: st.frequencyMHz,
-                          distanceKm: distKm,
-                          hb: st.antennaHeightM,
-                          hm: rxHeightM,
-                        );
-
-                        final gTx = st.antennaGainDb;
-                        const gRx = 0.0;
-                        final rxDbm = txPowerDbm + gTx + gRx - loss;
-                        final marginDb = rxDbm - (-100.0);
-
-                        if (!mounted) return;
-
-                        showModalBottomSheet(
-                          context: context,
-                          builder: (ctx) {
-                            final t = Theme.of(ctx).textTheme;
-                            return Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text('Аналіз точки', style: t.titleMedium),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'Lat: ${latLng.latitude.toStringAsFixed(6)}, '
-                                    'Lon: ${latLng.longitude.toStringAsFixed(6)}',
-                                  ),
-                                  Text(
-                                    'Відстань до станції: ${distKm.toStringAsFixed(2)} км',
-                                  ),
-                                  Text(
-                                    'Втрати шляху L(d): ${loss.toStringAsFixed(1)} дБ',
-                                  ),
-                                  Text('P_rx: ${rxDbm.toStringAsFixed(1)} dBm'),
-                                  Text(
-                                    'Запас по чутливості (від -100 dBm): '
-                                    '${marginDb.toStringAsFixed(1)} дБ',
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    marginDb >= 0
-                                        ? 'Зона вважається придатною для стійкого звʼязку.'
-                                        : 'Ймовірні провали звʼязку, сигнал нижче цільового порогу.',
-                                    style: t.bodySmall,
-                                  ),
-                                ],
+                  child: _viewMode == CoverageViewMode.zones
+                      ? const Wrap(
+                          spacing: 12,
+                          runSpacing: 4,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            _LegendDot(
+                              color: Colors.green,
+                              label: 'Стабільна (rx ≥ -80 dBm)',
+                            ),
+                            _LegendDot(
+                              color: Colors.yellow,
+                              label: 'Погіршене',
+                            ),
+                            _LegendDot(color: Colors.orange, label: 'Граничне'),
+                            _LegendDot(
+                              color: Colors.red,
+                              label: 'Нижче порога',
+                            ),
+                          ],
+                        )
+                      : Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 80,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                borderRadius: BorderRadius.circular(999),
+                                gradient: const LinearGradient(
+                                  begin: Alignment.centerLeft,
+                                  end: Alignment.centerRight,
+                                  colors: [
+                                    Colors.red,
+                                    Colors.orange,
+                                    Colors.yellow,
+                                    Colors.green,
+                                  ],
+                                ),
                               ),
-                            );
-                          },
-                        );
-                      }
-                    }
-                  },
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Heatmap рівня сигналу (від слабкого до сильного)',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                fontSize: 11,
+                                color: mutedText,
+                              ),
+                            ),
+                          ],
+                        ),
                 ),
-                children: [
-                  TileLayer(
-                    urlTemplate:
-                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                    userAgentPackageName: 'com.trunkops.app',
-                    maxZoom: 18,
-                    minZoom: 3,
+
+                const SizedBox(height: 8),
+
+                Text(
+                  'Модель: узагальнена модель Хата з поправкою на середовище. '
+                  'L(d)=69.55+26.16·log₁₀(f)−13.82·log₁₀(hb)−a(hm)+(44.9−6.55·log₁₀(hb))·log₁₀(d)+C_env.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontSize: 11,
+                    color: mutedText,
                   ),
-                  if (_coverage != null)
-                    CircleLayer(
-                      circles: _coverage!.cells.map((cell) {
-                        final color = _viewMode == CoverageViewMode.zones
-                            ? _classifiedColorForRx(cell.rxLevelDbm)
-                            : _heatmapColorForRx(cell.rxLevelDbm);
-                        final radius = _viewMode == CoverageViewMode.zones
-                            ? (compact ? 6.0 : 8.0)
-                            : (compact ? 10.0 : 14.0);
-                        return CircleMarker(
-                          point: LatLng(cell.lat, cell.lon),
-                          radius: radius,
-                          color: color,
-                        );
-                      }).toList(),
+                ),
+
+                const SizedBox(height: 12),
+
+                // ✅ Мапа: фіксована адекватна висота, не ламає верстку
+                SizedBox(
+                  height: mapHeight,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: FlutterMap(
+                      options: MapOptions(
+                        initialCenter: LatLng(centerLat, centerLon),
+                        initialZoom: 11,
+                        onTap: (tapPos, latLng) async {
+                          setState(() {
+                            _centerLatController.text = latLng.latitude
+                                .toStringAsFixed(6);
+                            _centerLonController.text = latLng.longitude
+                                .toStringAsFixed(6);
+                            if (_stations.isNotEmpty) {
+                              _selectedStation.lat = latLng.latitude;
+                              _selectedStation.lon = latLng.longitude;
+                            }
+                          });
+                          await _persistState();
+                        },
+                      ),
+                      children: [
+                        TileLayer(
+                          urlTemplate:
+                              'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          userAgentPackageName: 'com.trunkops.app',
+                          maxZoom: 18,
+                          minZoom: 3,
+                        ),
+                        if (_coverage != null)
+                          CircleLayer(
+                            circles: _coverage!.cells.map((cell) {
+                              final color = _viewMode == CoverageViewMode.zones
+                                  ? _classifiedColorForRx(cell.rxLevelDbm)
+                                  : _heatmapColorForRx(cell.rxLevelDbm);
+                              final radius = _viewMode == CoverageViewMode.zones
+                                  ? (compact ? 6.0 : 8.0)
+                                  : (compact ? 10.0 : 14.0);
+                              return CircleMarker(
+                                point: LatLng(cell.lat, cell.lon),
+                                radius: radius,
+                                color: color,
+                              );
+                            }).toList(),
+                          ),
+                        if (polygons.isNotEmpty)
+                          PolygonLayer(polygons: polygons),
+                        if (polylines.isNotEmpty)
+                          PolylineLayer(polylines: polylines),
+                        if (markers.isNotEmpty) MarkerLayer(markers: markers),
+                      ],
                     ),
-                  if (polygons.isNotEmpty) PolygonLayer(polygons: polygons),
-                  if (polylines.isNotEmpty) PolylineLayer(polylines: polylines),
-                  if (markers.isNotEmpty) MarkerLayer(markers: markers),
-                ],
-              ),
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -1456,6 +1347,7 @@ class _SideStatusPanel extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
+
               _CoverageStatusRow(
                 label: 'Стабільна зона',
                 percent: stablePercent,
@@ -1479,7 +1371,9 @@ class _SideStatusPanel extends StatelessWidget {
                 percent: nonePercent,
                 color: criticalColor,
               ),
+
               const SizedBox(height: 16),
+
               if (minRx != null && maxRx != null && medianRx != null)
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1488,7 +1382,7 @@ class _SideStatusPanel extends StatelessWidget {
                       'Статистика сигналу',
                       style: textTheme.bodyMedium?.copyWith(
                         fontSize: 13,
-                        fontWeight: FontWeight.w500,
+                        fontWeight: FontWeight.w600,
                         color: colorScheme.onSurface,
                       ),
                     ),
@@ -1514,22 +1408,25 @@ class _SideStatusPanel extends StatelessWidget {
                       ),
                   ],
                 ),
+
               const SizedBox(height: 20),
+
               Text(
                 'Ключові вузли',
                 style: textTheme.bodyMedium?.copyWith(
                   fontSize: 14,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.w600,
                   color: colorScheme.onSurface,
                 ),
               ),
               const SizedBox(height: 8),
+
               _NodeStatusTile(
                 name: 'Базові станції',
                 status: stablePercent > 0.7 ? 'OK' : 'Warning',
                 description: stablePercent > 0.7
                     ? 'Основні вузли забезпечують стійке покриття більшості зони.'
-                    : 'Стабільне покриття нижче бажаного рівня, варто розглянути підсилення.',
+                    : 'Стабільне покриття нижче бажаного рівня — варто розглянути підсилення/ретрансляцію.',
                 color: stableColor,
               ),
               const SizedBox(height: 8),
@@ -1539,7 +1436,7 @@ class _SideStatusPanel extends StatelessWidget {
                     ? 'Warning'
                     : 'OK',
                 description:
-                    'Частина зони має погіршене або граничне покриття, можливі провали звʼязку при русі.',
+                    'Частина зони має погіршене/граничне покриття — можливі провали зв’язку при русі.',
                 color: degradedColor,
               ),
               const SizedBox(height: 8),
@@ -1547,7 +1444,7 @@ class _SideStatusPanel extends StatelessWidget {
                 name: 'Критичні ділянки',
                 status: nonePercent > 0.05 ? 'Critical' : 'OK',
                 description: nonePercent > 0.05
-                    ? 'Є зони без гарантованого покриття — потрібне планування ретрансляторів.'
+                    ? 'Є зони без гарантованого покриття — потрібне планування ретрансляторів/перерозгортання.'
                     : 'Зони без покриття незначні або відсутні.',
                 color: criticalColor,
               ),
@@ -1560,63 +1457,6 @@ class _SideStatusPanel extends StatelessWidget {
 }
 
 /// ───────────────────── ДОПОМІЖНІ ВІДЖЕТИ ─────────────────────
-
-class _FilterPill extends StatelessWidget {
-  final String label;
-  final String value;
-  final VoidCallback onTap;
-
-  const _FilterPill({
-    required this.label,
-    required this.value,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final extra = theme.extension<AppExtraColors>();
-    final textTheme = theme.textTheme;
-
-    final muted =
-        textTheme.bodySmall?.color ?? colorScheme.onSurface.withOpacity(0.7);
-
-    return InkWell(
-      borderRadius: BorderRadius.circular(999),
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(
-          color: colorScheme.surface,
-          borderRadius: BorderRadius.circular(999),
-          border: Border.all(
-            color: extra?.borderDefault ?? colorScheme.outline.withOpacity(0.6),
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              '$label:',
-              style: textTheme.bodySmall?.copyWith(fontSize: 12, color: muted),
-            ),
-            const SizedBox(width: 6),
-            Text(
-              value,
-              style: textTheme.bodyMedium?.copyWith(
-                fontSize: 13,
-                color: colorScheme.onSurface,
-              ),
-            ),
-            const SizedBox(width: 4),
-            Icon(Icons.keyboard_arrow_down_rounded, size: 18, color: muted),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 class _LegendDot extends StatelessWidget {
   final Color color;
@@ -1659,7 +1499,7 @@ class _LegendDot extends StatelessWidget {
 
 class _CoverageStatusRow extends StatelessWidget {
   final String label;
-  final double percent; // 0..1
+  final double percent;
   final Color color;
 
   const _CoverageStatusRow({
@@ -1676,7 +1516,6 @@ class _CoverageStatusRow extends StatelessWidget {
 
     final muted =
         textTheme.bodySmall?.color ?? colorScheme.onSurface.withOpacity(0.7);
-
     final clamped = percent.clamp(0.0, 1.0);
 
     return Column(
@@ -1753,7 +1592,6 @@ class _NodeStatusTile extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Кольоровий маркер
           Container(
             width: 8,
             height: 32,
@@ -1764,7 +1602,6 @@ class _NodeStatusTile extends StatelessWidget {
           ),
           const SizedBox(width: 10),
 
-          // Текст
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1773,7 +1610,7 @@ class _NodeStatusTile extends StatelessWidget {
                   name,
                   style: textTheme.bodyMedium?.copyWith(
                     fontSize: 13,
-                    fontWeight: FontWeight.w500,
+                    fontWeight: FontWeight.w600,
                     color: colorScheme.onSurface,
                   ),
                 ),
@@ -1801,7 +1638,7 @@ class _NodeStatusTile extends StatelessWidget {
               status,
               style: textTheme.labelSmall?.copyWith(
                 fontSize: 10,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w600,
                 color: color,
               ),
             ),
@@ -1821,36 +1658,518 @@ class _SmallNumberField extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        // Адаптивна ширина: трохи менша на мобілках
-        final maxW = constraints.maxWidth;
-        double fieldWidth;
-        if (maxW < 360) {
-          fieldWidth = 100;
-        } else if (maxW < 600) {
-          fieldWidth = 110;
-        } else {
-          fieldWidth = 120;
+
+    // ✅ Адаптивна ширина по реальній ширині екрана (не по constraints поля)
+    final w = MediaQuery.of(context).size.width;
+    double fieldWidth;
+    if (w < 380) {
+      fieldWidth = 96;
+    } else if (w < 600) {
+      fieldWidth = 110;
+    } else {
+      fieldWidth = 120;
+    }
+
+    return SizedBox(
+      width: fieldWidth,
+      child: TextField(
+        controller: controller,
+        keyboardType: const TextInputType.numberWithOptions(
+          decimal: true,
+          signed: true,
+        ),
+        style: theme.textTheme.bodySmall?.copyWith(fontSize: 12),
+        decoration: InputDecoration(
+          isDense: true,
+          border: const OutlineInputBorder(),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 8,
+            vertical: 8,
+          ),
+          labelText: label,
+        ),
+      ),
+    );
+  }
+}
+
+/// ───────────────────── РОЗРАХУНОК КАНАЛІВ ТРАНКІНГУ (ERLANG B) ─────────────────────
+
+enum _TrunkCalcMode { blocking, requiredChannels }
+
+class _TrunkingChannelCalcCard extends StatefulWidget {
+  const _TrunkingChannelCalcCard();
+
+  @override
+  State<_TrunkingChannelCalcCard> createState() =>
+      _TrunkingChannelCalcCardState();
+}
+
+class _TrunkingChannelCalcCardState extends State<_TrunkingChannelCalcCard> {
+  _TrunkCalcMode _mode = _TrunkCalcMode.blocking;
+
+  final _aCtrl = TextEditingController(text: '8');
+  final _nCtrl = TextEditingController(text: '12');
+  final _pbCtrl = TextEditingController(text: '0.02');
+
+  String? _error;
+  double? _pbResult;
+  int? _nResult;
+  double? _carriedTraffic;
+
+  @override
+  void dispose() {
+    _aCtrl.dispose();
+    _nCtrl.dispose();
+    _pbCtrl.dispose();
+    super.dispose();
+  }
+
+  double _erlangB(double a, int n) {
+    double b = 1.0;
+    for (int i = 1; i <= n; i++) {
+      b = (a * b) / (i + a * b);
+    }
+    return b;
+  }
+
+  int _requiredChannelsForBlocking({
+    required double a,
+    required double targetPb,
+    int nMin = 1,
+    int nMax = 500,
+  }) {
+    for (int n = nMin; n <= nMax; n++) {
+      if (_erlangB(a, n) <= targetPb) return n;
+    }
+    return nMax;
+  }
+
+  void _recalculate() {
+    setState(() {
+      _error = null;
+      _pbResult = null;
+      _nResult = null;
+      _carriedTraffic = null;
+
+      final a = double.tryParse(_aCtrl.text.trim().replaceAll(',', '.'));
+      if (a == null || a <= 0) {
+        _error = 'Введіть A (навантаження в Ерлангах) > 0.';
+        return;
+      }
+
+      if (_mode == _TrunkCalcMode.blocking) {
+        final n = int.tryParse(_nCtrl.text.trim());
+        if (n == null || n <= 0) {
+          _error = 'Введіть N (кількість каналів) як ціле число > 0.';
+          return;
         }
 
-        return SizedBox(
-          width: fieldWidth,
-          child: TextField(
-            controller: controller,
-            keyboardType: const TextInputType.numberWithOptions(
-              decimal: true,
-              signed: true,
-            ),
-            style: theme.textTheme.bodySmall?.copyWith(fontSize: 12),
-            decoration: const InputDecoration(
-              isDense: true,
-              border: OutlineInputBorder(),
-              contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-            ).copyWith(labelText: label),
-          ),
+        final pb = _erlangB(a, n);
+        _pbResult = pb;
+        _carriedTraffic = a * (1.0 - pb);
+      } else {
+        final targetPb = double.tryParse(
+          _pbCtrl.text.trim().replaceAll(',', '.'),
         );
-      },
+        if (targetPb == null || targetPb <= 0 || targetPb >= 1) {
+          _error = 'Введіть цільовий Pb у межах (0; 1), напр. 0.02.';
+          return;
+        }
+
+        final n = _requiredChannelsForBlocking(a: a, targetPb: targetPb);
+        _nResult = n;
+
+        final pb = _erlangB(a, n);
+        _pbResult = pb;
+        _carriedTraffic = a * (1.0 - pb);
+      }
+    });
+  }
+
+  String _fmtPb(double pb) {
+    final pct = pb * 100.0;
+    return '${pb.toStringAsFixed(4)}  (${pct.toStringAsFixed(2)}%)';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final extra = theme.extension<AppExtraColors>();
+
+    final w = MediaQuery.of(context).size.width;
+    final compact = w < 700;
+
+    final titleStyle = theme.textTheme.titleMedium?.copyWith(
+      fontWeight: FontWeight.w800,
+      color: cs.onSurface,
+    );
+
+    final subtitleStyle = theme.textTheme.bodySmall?.copyWith(
+      color: theme.textTheme.bodySmall?.color ?? cs.onSurface.withOpacity(0.7),
+      height: 1.25,
+    );
+
+    return Container(
+      decoration: BoxDecoration(
+        color: cs.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: extra?.borderDefault ?? cs.outline.withOpacity(0.6),
+          width: 1,
+        ),
+      ),
+      padding: EdgeInsets.all(compact ? 12 : 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 10,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: cs.primary.withOpacity(0.9),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Розрахунок каналів транкінгового зв’язку',
+                      style: titleStyle,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Erlang B: оцінка ймовірності блокування (Pb) та підбір мінімальної кількості каналів N '
+                      'за заданим навантаженням A (Ерланги).',
+                      style: subtitleStyle,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(Icons.calculate_outlined, color: cs.primary),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ChoiceChip(
+                label: const Text('Pb за A,N'),
+                selected: _mode == _TrunkCalcMode.blocking,
+                onSelected: (v) {
+                  if (!v) return;
+                  setState(() => _mode = _TrunkCalcMode.blocking);
+                  _recalculate();
+                },
+              ),
+              ChoiceChip(
+                label: const Text('Підібрати N за A,Pb'),
+                selected: _mode == _TrunkCalcMode.requiredChannels,
+                onSelected: (v) {
+                  if (!v) return;
+                  setState(() => _mode = _TrunkCalcMode.requiredChannels);
+                  _recalculate();
+                },
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 12),
+
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _MetricField(
+                label: 'A (Ерланги)',
+                controller: _aCtrl,
+                hint: 'напр. 8',
+                width: compact ? 160 : 180,
+              ),
+              if (_mode == _TrunkCalcMode.blocking)
+                _MetricField(
+                  label: 'N (канали)',
+                  controller: _nCtrl,
+                  hint: 'напр. 12',
+                  width: compact ? 160 : 180,
+                  integerOnly: true,
+                )
+              else
+                _MetricField(
+                  label: 'Pb (ціль)',
+                  controller: _pbCtrl,
+                  hint: 'напр. 0.02',
+                  width: compact ? 160 : 180,
+                ),
+              ElevatedButton.icon(
+                onPressed: _recalculate,
+                icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                label: const Text('Розрахувати'),
+              ),
+            ],
+          ),
+
+          if (_error != null) ...[
+            const SizedBox(height: 10),
+            _InfoBanner(
+              icon: Icons.error_outline,
+              color: cs.error,
+              title: 'Помилка введення',
+              text: _error!,
+            ),
+          ],
+
+          const SizedBox(height: 12),
+
+          _ResultsPanel(
+            mode: _mode,
+            pbResult: _pbResult,
+            nResult: _nResult,
+            carriedTraffic: _carriedTraffic,
+            formatPb: _fmtPb,
+          ),
+
+          const SizedBox(height: 12),
+
+          Text(
+            'Примітка: Erlang B описує систему втрат без черги (blocked calls cleared). '
+            'Оцінка пропускної здатності: A·(1 − Pb).',
+            style: theme.textTheme.bodySmall?.copyWith(
+              fontSize: 11,
+              color:
+                  theme.textTheme.bodySmall?.color ??
+                  cs.onSurface.withOpacity(0.7),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MetricField extends StatelessWidget {
+  final String label;
+  final TextEditingController controller;
+  final String hint;
+  final double width;
+  final bool integerOnly;
+
+  const _MetricField({
+    required this.label,
+    required this.controller,
+    required this.hint,
+    required this.width,
+    this.integerOnly = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: width,
+      child: TextField(
+        controller: controller,
+        keyboardType: TextInputType.numberWithOptions(
+          decimal: !integerOnly,
+          signed: false,
+        ),
+        decoration: InputDecoration(
+          labelText: label,
+          hintText: hint,
+          isDense: true,
+          border: const OutlineInputBorder(),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 10,
+            vertical: 10,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _InfoBanner extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String text;
+
+  const _InfoBanner({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.text,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context).textTheme;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.5)),
+        color: color.withOpacity(0.08),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 2),
+                Text(text, style: t.bodySmall),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ResultsPanel extends StatelessWidget {
+  final _TrunkCalcMode mode;
+  final double? pbResult;
+  final int? nResult;
+  final double? carriedTraffic;
+  final String Function(double) formatPb;
+
+  const _ResultsPanel({
+    required this.mode,
+    required this.pbResult,
+    required this.nResult,
+    required this.carriedTraffic,
+    required this.formatPb,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final extra = theme.extension<AppExtraColors>();
+    final t = theme.textTheme;
+
+    final has = pbResult != null;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: extra?.borderDefault ?? cs.outline.withOpacity(0.6),
+        ),
+        color: cs.surface.withOpacity(0.6),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Результати',
+            style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 8),
+
+          if (!has)
+            Text(
+              'Введіть параметри та натисніть «Розрахувати».',
+              style: t.bodySmall?.copyWith(
+                color: cs.onSurface.withOpacity(0.7),
+              ),
+            )
+          else
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                _ResultChip(
+                  title: 'Ймовірність блокування Pb',
+                  value: formatPb(pbResult!),
+                  icon: Icons.block,
+                ),
+                if (mode == _TrunkCalcMode.requiredChannels && nResult != null)
+                  _ResultChip(
+                    title: 'Рекомендовано каналів N',
+                    value: '$nResult',
+                    icon: Icons.view_week_outlined,
+                  ),
+                if (carriedTraffic != null)
+                  _ResultChip(
+                    title: 'Пропущене навантаження A·(1−Pb)',
+                    value: carriedTraffic!.toStringAsFixed(2),
+                    icon: Icons.swap_vert_circle_outlined,
+                  ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ResultChip extends StatelessWidget {
+  final String title;
+  final String value;
+  final IconData icon;
+
+  const _ResultChip({
+    required this.title,
+    required this.value,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final t = Theme.of(context).textTheme;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: cs.outline.withOpacity(0.6)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: cs.primary),
+          const SizedBox(width: 10),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: t.bodySmall?.copyWith(
+                  color: cs.onSurface.withOpacity(0.75),
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: t.bodyMedium?.copyWith(fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }

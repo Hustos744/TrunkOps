@@ -38,7 +38,7 @@ class SideMenu extends StatelessWidget {
     _MenuItemData(icon: Icons.shield_outlined, label: 'Підрозділи'),
     _MenuItemData(icon: Icons.devices_other_outlined, label: 'Облік засобів'),
     _MenuItemData(icon: Icons.build_circle_outlined, label: 'Обслуговування'),
-    _MenuItemData(icon: Icons.analytics_outlined, label: 'Сценарії'),
+    //_MenuItemData(icon: Icons.analytics_outlined, label: 'Сценарії'),
   ];
 
   static const List<_MenuItemData> _bottomItems = [
